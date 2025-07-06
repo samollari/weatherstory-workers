@@ -13,11 +13,16 @@
 	},
 	"workflows": [
 		{
-			"name": "workflows-starter",
-			"binding": "MY_WORKFLOW",
-			"class_name": "MyWorkflow"
+			"name": "wxstory-starter",
+			"binding": "START_WX_STORY_UPDATE_WORKFLOW",
+			"class_name": "StartWXStoryUpdateWorkflow"
+		},
+		{
+			"name": "wxstory-peroffice",
+			"binding": "WX_STORY_PER_OFFICE_WORKFLOW",
+			"class_name": "WXStoryPerOfficeWorkflow"
 		}
-	]
+	],
 	/**
 	 * Smart Placement
 	 * Docs: https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
@@ -35,7 +40,7 @@
 	 * Environment Variables
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
 	 */
-	// "vars": { "MY_VARIABLE": "production_value" },
+	"vars": { "R2_BUCKET_BASE": "https://storage.wxstory.gizm0.dev", "USER_AGENT": "WXStory Workers Bot - sam@gizm0.dev" },
 	/**
 	 * Note: Use secrets to store sensitive data.
 	 * https://developers.cloudflare.com/workers/configuration/secrets/
@@ -52,4 +57,28 @@
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#service-bindings
 	 */
 	// "services": [{ "binding": "MY_SERVICE", "service": "my-service" }]
+
+	"kv_namespaces": [
+		{
+			"binding": "OFFICES_LAST_MODIFIED_TIMES",
+			"id": "ae0786d51a0c4358a4b1be02c0ff41ab"
+		}
+	],
+
+	"r2_buckets": [
+		{
+			"bucket_name": "wxstory-images",
+			"binding": "wxstory_images"
+		}
+	],
+
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "wxstory",
+			"database_id": "fcf553ee-9e52-4a8c-b95e-32c2d54781ed"
+		}
+	],
+
+	"compatibility_flags": ["nodejs_compat"]
 }
