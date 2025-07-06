@@ -29,6 +29,8 @@
 	 */
 	// "placement": { "mode": "smart" },
 
+	"triggers": { "crons": ["28 * * * *"] }, // Triggers every hour at :28
+
 	/**
 	 * Bindings
 	 * Bindings allow your Worker to interact with resources on the Cloudflare Developer Platform, including

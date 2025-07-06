@@ -299,6 +299,10 @@ export default {
 			force,
 		});
 	},
+
+	async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+		await env.START_WX_STORY_UPDATE_WORKFLOW.create();
+	},
 };
 // </docs-tag name="workflows-fetch-handler">
 // </docs-tag name="full-workflow-example">
