@@ -21,6 +21,7 @@
 		}
 	},
 	"dependencies": {
-		"@nrsk/unindent": "^1.1.0"
+		"@nrsk/unindent": "^1.1.0",
+		"@tsndr/cloudflare-worker-router": "^3.2.10"
 	}
 }

@@ -1,5 +1,6 @@
 // <docs-tag name="full-workflow-example">
 import un from '@nrsk/unindent';
+import { Router } from '@tsndr/cloudflare-worker-router';
 import { WorkflowEntrypoint, WorkflowStep, WorkflowEvent } from 'cloudflare:workers';
 import { basename } from 'node:path/posix';
 
@@ -295,40 +296,38 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 	}
 }
 
+const router = new Router<Env>();
+
+router.get('/status', async ({ req, env }) => {
+	const id = req.query['instanceId'];
+	let instance = await env.START_WX_STORY_UPDATE_WORKFLOW.get(id);
+	return Response.json({
+		status: await instance.status(),
+	});
+});
+
+router.any('/invoke', async ({ req, env }) => {
+	const dev = 'dev' in req.query;
+
+	// Spawn a new instance and return the ID and status
+	let instance = await env.START_WX_STORY_UPDATE_WORKFLOW.create({ params: { dev } });
+	// You can also set the ID to match an ID in your own system
+	// and pass an optional payload to the Workflow
+	// let instance = await env.MY_WORKFLOW.create({
+	// 	id: 'id-from-your-system',
+	// 	params: { payload: 'to send' },
+	// });
+	return Response.json({
+		id: instance.id,
+		details: await instance.status(),
+		force: dev,
+	});
+});
+
 // <docs-tag name="workflows-fetch-handler">
 export default {
 	async fetch(req: Request, env: Env): Promise<Response> {
-		let url = new URL(req.url);
-
-		if (url.pathname.startsWith('/favicon')) {
-			return Response.json({}, { status: 404 });
-		}
-
-		// Get the status of an existing instance, if provided
-		// GET /?instanceId=<id here>
-		let id = url.searchParams.get('instanceId');
-		if (id) {
-			let instance = await env.START_WX_STORY_UPDATE_WORKFLOW.get(id);
-			return Response.json({
-				status: await instance.status(),
-			});
-		}
-
-		const dev = url.searchParams.has('dev');
-
-		// Spawn a new instance and return the ID and status
-		let instance = await env.START_WX_STORY_UPDATE_WORKFLOW.create({ params: { dev } });
-		// You can also set the ID to match an ID in your own system
-		// and pass an optional payload to the Workflow
-		// let instance = await env.MY_WORKFLOW.create({
-		// 	id: 'id-from-your-system',
-		// 	params: { payload: 'to send' },
-		// });
-		return Response.json({
-			id: instance.id,
-			details: await instance.status(),
-			force: dev,
-		});
+		return router.handle(req, env);
 	},
 
 	async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
