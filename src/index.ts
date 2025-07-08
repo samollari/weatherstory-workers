@@ -16,7 +16,7 @@ type Env = {
 
 // User-defined params passed to your workflow
 type StartParams = {
-	force: boolean;
+	dev: boolean;
 };
 
 type OfficeParams = {
@@ -193,7 +193,7 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 
 			const lastModified = await this.env.wxstory_kv.get(timestampKey);
 
-			const continueProcessing = event.payload.force || lastModified !== modifiedTimestamp;
+			const continueProcessing = lastModified !== modifiedTimestamp;
 			if (continueProcessing) {
 				await this.env.wxstory_kv.put(timestampKey, modifiedTimestamp);
 			}
@@ -201,9 +201,9 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 		});
 		console.log({ wasModified });
 
-		// If the URL did not change and the image was not modified, do not continue
-		// If the URL changed or the image was modified, continue
-		if (!imageURLChanged && !wasModified) {
+		// If the URL did not change and the image was not modified and not running a dev update, do not continue
+		// If the URL changed or the image was modified or running a dev update, continue
+		if (!event.payload.dev && !imageURLChanged && !wasModified) {
 			// Short circuit, do not continue execution
 			return;
 		}
@@ -230,7 +230,7 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 			}
 
 			const imageURL = new URL(storedObject.key, this.env.R2_BUCKET_BASE);
-			if (event.payload.force) {
+			if (event.payload.dev) {
 				imageURL.searchParams.set('v', new Date().getTime().toString());
 			}
 
@@ -266,10 +266,14 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 		});
 
 		const officeWebhooks = await step.do('Lookup office channels', async () => {
-			const statement = this.env.DB.prepare(`SELECT WebhookURL FROM Subscriptions WHERE OfficeId = ?;`);
+			const statement = this.env.DB.prepare(`
+				SELECT WebhookURL
+				FROM Subscriptions
+				WHERE OfficeId = ? AND (? = 0 OR dev = 1);
+			`); // If not dev run, picks any matching the office. If dev run, only selects dev channels
 			const { officeId } = event.payload;
 
-			const { results } = await statement.bind(officeId).run<{ WebhookURL: string }>();
+			const { results } = await statement.bind(officeId, event.payload.dev).run<{ WebhookURL: string }>();
 			return results.map(({ WebhookURL }) => WebhookURL);
 		});
 
@@ -310,10 +314,10 @@ export default {
 			});
 		}
 
-		const force = url.searchParams.has('force');
+		const dev = url.searchParams.has('dev');
 
 		// Spawn a new instance and return the ID and status
-		let instance = await env.START_WX_STORY_UPDATE_WORKFLOW.create({ params: { force } });
+		let instance = await env.START_WX_STORY_UPDATE_WORKFLOW.create({ params: { dev } });
 		// You can also set the ID to match an ID in your own system
 		// and pass an optional payload to the Workflow
 		// let instance = await env.MY_WORKFLOW.create({
@@ -323,7 +327,7 @@ export default {
 		return Response.json({
 			id: instance.id,
 			details: await instance.status(),
-			force,
+			force: dev,
 		});
 	},
 
