@@ -7,7 +7,7 @@ type Env = {
 	// Add your bindings here, e.g. Workers KV, D1, Workers AI, etc.
 	START_WX_STORY_UPDATE_WORKFLOW: Workflow<StartParams>;
 	WX_STORY_PER_OFFICE_WORKFLOW: Workflow<OfficeParams>;
-	OFFICES_LAST_MODIFIED_TIMES: KVNamespace;
+	wxstory_kv: KVNamespace;
 	wxstory_images: R2Bucket;
 	DB: D1Database;
 	R2_BUCKET_BASE: string;
@@ -137,12 +137,13 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 		// 2. Check if the image was modified (compare against D1)
 		const wasModified = await step.do('Check if image was modified since last run', async () => {
 			const { office } = event.payload;
+			const timestampKey = `${office}-modified`;
 
-			const lastModified = await this.env.OFFICES_LAST_MODIFIED_TIMES.get(office);
+			const lastModified = await this.env.wxstory_kv.get(timestampKey);
 
 			const continueProcessing = event.payload.force || lastModified !== modifiedTimestamp;
 			if (continueProcessing) {
-				await this.env.OFFICES_LAST_MODIFIED_TIMES.put(office, modifiedTimestamp);
+				await this.env.wxstory_kv.put(timestampKey, modifiedTimestamp);
 			}
 			return continueProcessing;
 		});
@@ -236,7 +237,14 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 		});
 		console.log({ officeMessageData });
 
-		// 7. Lookup all channels to send to
+		// 7. Cache message data in KV
+		await step.do('Cache message data in KV', async () => {
+			const { office } = event.payload;
+			const messageKey = `${office}-message`;
+			await this.env.wxstory_kv.put(messageKey, JSON.stringify(officeMessageData));
+		});
+
+		// 8. Lookup all channels to send to
 		const officeWebhooks = await step.do('Lookup office channels', async () => {
 			const statement = this.env.DB.prepare(`SELECT WebhookURL FROM Subscriptions WHERE OfficeId = ?;`);
 			const { officeId } = event.payload;
@@ -245,7 +253,7 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 			return results.map(({ WebhookURL }) => WebhookURL);
 		});
 
-		// 8. Send messages to channels
+		// 9. Send messages to channels
 		await step.do('Send messages', async () => {
 			await Promise.all(
 				officeWebhooks.map((webhook) =>

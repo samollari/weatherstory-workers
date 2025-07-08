@@ -62,7 +62,7 @@
 
 	"kv_namespaces": [
 		{
-			"binding": "OFFICES_LAST_MODIFIED_TIMES",
+			"binding": "wxstory_kv",
 			"id": "ae0786d51a0c4358a4b1be02c0ff41ab"
 		}
 	],
