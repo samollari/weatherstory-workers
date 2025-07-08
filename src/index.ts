@@ -24,40 +24,47 @@ type OfficeParams = {
 	officeId: number;
 } & StartParams;
 
-function officePrimaryImageURL(office: string): URL {
-	return new URL(`https://www.weather.gov/images/${office}/WxStory/WeatherStory1.png`);
-}
-
 function officePageURL(office: string): URL {
 	return new URL(`https://www.weather.gov/${office}/weatherstory`);
 }
 
-async function htmlQuery<Queries extends Record<string, string>>(html: BodyInit, queries: Queries) {
+async function htmlQuery<Queries extends Record<string, { query: string; attribute?: string }>>(html: BodyInit, queries: Queries) {
 	const queryResponses: { [key: string]: string[] } = {};
 
 	let rewriter = new HTMLRewriter();
 	for (const entry of Object.entries(queries)) {
 		const [key, query] = entry;
+		const queryAttribute = query.attribute;
 		const thisQueryResponses: (typeof queryResponses)[keyof typeof queryResponses] = (queryResponses[key] = []);
 
-		rewriter = rewriter.on(query, {
-			comments() {},
-			element(element) {
-				thisQueryResponses.push('');
-			},
-			text(element) {
-				// debugger;
-				const lastIndex = thisQueryResponses.length - 1;
-				thisQueryResponses[lastIndex] += element.text;
-				if (element.lastInTextNode) {
-					thisQueryResponses[lastIndex] = un(thisQueryResponses[lastIndex]);
-					const matches = /(.*\S)\s*/s.exec(thisQueryResponses[lastIndex]);
-					if (matches) {
-						thisQueryResponses[lastIndex] = matches[1];
+		if (queryAttribute) {
+			rewriter = rewriter.on(query.query, {
+				element(element) {
+					const attributeValue = element.getAttribute(queryAttribute);
+					if (!attributeValue) {
+						return;
 					}
-				}
-			},
-		});
+					thisQueryResponses.push(attributeValue);
+				},
+			});
+		} else {
+			rewriter = rewriter.on(query.query, {
+				element(element) {
+					thisQueryResponses.push('');
+				},
+				text(element) {
+					const lastIndex = thisQueryResponses.length - 1;
+					thisQueryResponses[lastIndex] += element.text;
+					if (element.lastInTextNode) {
+						thisQueryResponses[lastIndex] = un(thisQueryResponses[lastIndex]);
+						const matches = /(.*\S)\s*/s.exec(thisQueryResponses[lastIndex]);
+						if (matches) {
+							thisQueryResponses[lastIndex] = matches[1];
+						}
+					}
+				},
+			});
+		}
 	}
 
 	const tempResponseToTransform = new Response(html);
@@ -72,7 +79,6 @@ async function htmlQuery<Queries extends Record<string, string>>(html: BodyInit,
 // <docs-tag name="workflow-entrypoint">
 export class StartWXStoryUpdateWorkflow extends WorkflowEntrypoint<Env, StartParams> {
 	async run(event: WorkflowEvent<StartParams>, step: WorkflowStep) {
-		// 1. Find all NWS offices to poll (temp: hardcode. eventually: query D1)
 		const offices = await step.do('Collect offices to poll', async () => {
 			const statement = this.env.DB.prepare(`
 				SELECT CallSign, OfficeId FROM (
@@ -92,7 +98,6 @@ export class StartWXStoryUpdateWorkflow extends WorkflowEntrypoint<Env, StartPar
 			return;
 		}
 
-		// 2. Start a workflow for each office
 		await step.do('Start per-office workflows', async () => {
 			let instances = await this.env.WX_STORY_PER_OFFICE_WORKFLOW.createBatch(
 				offices.map((office) => ({
@@ -110,12 +115,42 @@ export class StartWXStoryUpdateWorkflow extends WorkflowEntrypoint<Env, StartPar
 export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficeParams> {
 	async run(event: Readonly<WorkflowEvent<OfficeParams>>, step: WorkflowStep) {
 		// TODO: Support multiple tabs/stories
-		// 1. Fetch last-modified header for the primary story image
-		const modifiedTimestamp = await step.do('Fetch last-modified header for the primary story image', async () => {
-			const { office } = event.payload;
 
-			const primaryImageURL = officePrimaryImageURL(office);
-			const response = await fetch(primaryImageURL, {
+		const pageContent = await step.do('Fetch WX Story page content', async () => {
+			const { office } = event.payload;
+			const response = await fetch(officePageURL(office), {
+				headers: {
+					'User-Agent': this.env.USER_AGENT,
+				},
+			});
+			if (!response.ok) {
+				throw new Error(`WX Story page fetch failed`);
+			}
+
+			return await response.text();
+		});
+		console.log({ pageContent });
+
+		const storyDetails = await step.do('Parse story title, description, and image URL', async () => {
+			const queryResults = await htmlQuery(pageContent, {
+				title: { query: 'div.c-tabs-nav__link:nth-child(1) > span:nth-child(1)' },
+				description: { query: 'div.c-tab:nth-child(2) > div:nth-child(1) > div:nth-child(1) > div:nth-child(2)' },
+				imageURL: {
+					query: 'div.c-tab:nth-child(2) > div:nth-child(1) > div:nth-child(1) > div:nth-child(1) > img:nth-child(1)',
+					attribute: 'src',
+				},
+			});
+
+			return {
+				title: queryResults.title[0],
+				description: queryResults.description[0],
+				imageURL: queryResults.imageURL[0],
+			};
+		});
+		console.log({ storyDetails });
+
+		const modifiedTimestamp = await step.do('Fetch last-modified header for the primary story image', async () => {
+			const response = await fetch(storyDetails.imageURL, {
 				method: 'HEAD',
 				headers: {
 					'User-Agent': this.env.USER_AGENT,
@@ -134,8 +169,25 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 		});
 		console.log({ modifiedTimestamp });
 
-		// 2. Check if the image was modified (compare against D1)
-		const wasModified = await step.do('Check if image was modified since last run', async () => {
+		const imageURLChanged = await step.do('Compare image URL with value stored in KV and update if it changed', async () => {
+			const { office } = event.payload;
+			const imageURL = storyDetails.imageURL;
+
+			const imageURLKey = `${office}-imageurl`;
+
+			const lastImageURL = await this.env.wxstory_kv.get(imageURLKey);
+
+			const changed = imageURL !== lastImageURL;
+
+			if (changed) {
+				await this.env.wxstory_kv.put(imageURLKey, imageURL);
+			}
+
+			return changed;
+		});
+		console.log({ imageURLChanged });
+
+		const wasModified = await step.do('Compare modified timestamp with value stored in KV and update if it changed', async () => {
 			const { office } = event.payload;
 			const timestampKey = `${office}-modified`;
 
@@ -149,16 +201,17 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 		});
 		console.log({ wasModified });
 
-		if (!wasModified) {
+		// If the URL did not change and the image was not modified, do not continue
+		// If the URL changed or the image was modified, continue
+		if (!imageURLChanged && !wasModified) {
 			// Short circuit, do not continue execution
 			return;
 		}
 
-		// 3. Fetch image data and cache it in R2
 		const cachedAddress = await step.do('Cache modified images', async () => {
 			const { office } = event.payload;
 
-			const imageAddress = officePrimaryImageURL(office);
+			const imageAddress = new URL(storyDetails.imageURL);
 			const response = await fetch(imageAddress, {
 				headers: {
 					'User-Agent': this.env.USER_AGENT,
@@ -185,37 +238,6 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 		});
 		console.log({ cachedAddress });
 
-		// 4. Fetch page content
-		const pageContent = await step.do('Fetch WX Story page content', async () => {
-			const { office } = event.payload;
-			const response = await fetch(officePageURL(office), {
-				headers: {
-					'User-Agent': 'WXStory Workers Bot - sam@gizm0.dev',
-				},
-			});
-			if (!response.ok) {
-				throw new Error(`WX Story page fetch failed`);
-			}
-
-			return await response.text();
-		});
-		console.log({ pageContent });
-
-		// 5. Parse story title and description from page
-		const storyDetails = await step.do('Parse story title and description', async () => {
-			const queryResults = await htmlQuery(pageContent, {
-				title: 'div.c-tabs-nav__link:nth-child(1) > span:nth-child(1)',
-				description: 'div.c-tab:nth-child(2) > div:nth-child(1) > div:nth-child(1) > div:nth-child(2)',
-			});
-
-			return {
-				title: queryResults.title[0],
-				description: queryResults.description[0],
-			};
-		});
-		console.log({ storyDetails });
-
-		// 6. Assemble message data (story title, description, change timestamp, R2 image URL)
 		const officeMessageData = await step.do('Assemble message data', async () => {
 			const { office } = event.payload;
 
@@ -237,14 +259,12 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 		});
 		console.log({ officeMessageData });
 
-		// 7. Cache message data in KV
 		await step.do('Cache message data in KV', async () => {
 			const { office } = event.payload;
 			const messageKey = `${office}-message`;
 			await this.env.wxstory_kv.put(messageKey, JSON.stringify(officeMessageData));
 		});
 
-		// 8. Lookup all channels to send to
 		const officeWebhooks = await step.do('Lookup office channels', async () => {
 			const statement = this.env.DB.prepare(`SELECT WebhookURL FROM Subscriptions WHERE OfficeId = ?;`);
 			const { officeId } = event.payload;
@@ -253,7 +273,6 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 			return results.map(({ WebhookURL }) => WebhookURL);
 		});
 
-		// 9. Send messages to channels
 		await step.do('Send messages', async () => {
 			await Promise.all(
 				officeWebhooks.map((webhook) =>
