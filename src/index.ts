@@ -5,14 +5,18 @@ import { WorkflowEntrypoint, WorkflowStep, WorkflowEvent } from 'cloudflare:work
 import { basename } from 'node:path/posix';
 
 type Env = {
-	// Add your bindings here, e.g. Workers KV, D1, Workers AI, etc.
 	START_WX_STORY_UPDATE_WORKFLOW: Workflow<StartParams>;
 	WX_STORY_PER_OFFICE_WORKFLOW: Workflow<OfficeParams>;
 	wxstory_kv: KVNamespace;
 	wxstory_images: R2Bucket;
 	DB: D1Database;
+
+	// Environment Variables
 	R2_BUCKET_BASE: string;
 	USER_AGENT: string;
+
+	// Secrets
+	DISCORD_PUBLIC_KEY: string;
 };
 
 // User-defined params passed to your workflow
@@ -274,7 +278,7 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 			`); // If not dev run, picks any matching the office. If dev run, only selects dev channels
 			const { officeId } = event.payload;
 
-			const { results } = await statement.bind(officeId, event.payload.dev).run<{ WebhookURL: string }>();
+			const { results } = await statement.bind(officeId, event.payload.dev ?? false).run<{ WebhookURL: string }>();
 			return results.map(({ WebhookURL }) => WebhookURL);
 		});
 
@@ -331,7 +335,7 @@ export default {
 	},
 
 	async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
-		await env.START_WX_STORY_UPDATE_WORKFLOW.create();
+		await env.START_WX_STORY_UPDATE_WORKFLOW.create({ params: { dev: false } });
 	},
 };
 // </docs-tag name="workflows-fetch-handler">
