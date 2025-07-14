@@ -17,6 +17,7 @@ import { commands, deploy, RESTAPI } from './interaction';
 export type Env = {
 	START_WX_STORY_UPDATE_WORKFLOW: Workflow<StartParams>;
 	WX_STORY_PER_OFFICE_WORKFLOW: Workflow<OfficeParams>;
+	SENDMESSAGE_WORKFLOW: Workflow<SendMessageParams>;
 	SUBSCRIBE_WORKFLOW: Workflow<SubscribeParams>;
 	UNSUBSCRIBE_WORKFLOW: Workflow<UnsubscribeParams>;
 
@@ -44,6 +45,11 @@ type OfficeParams = {
 	officeId: number;
 } & StartParams;
 
+type SendMessageParams = {
+	office: string;
+	channel: string;
+};
+
 type SubscribeParams = {
 	office: string;
 	guild?: string;
@@ -61,6 +67,10 @@ type UnsubscribeParams = {
 
 function officePageURL(office: string): URL {
 	return new URL(`https://www.weather.gov/${office}/weatherstory`);
+}
+
+function officeMessageKey(office: string) {
+	return `${office}-message` as const;
 }
 
 async function htmlQuery<Queries extends Record<string, { query: string; attribute?: string }>>(html: BodyInit, queries: Queries) {
@@ -299,8 +309,7 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 
 		await step.do('Cache message data in KV', async () => {
 			const { office } = event.payload;
-			const messageKey = `${office}-message`;
-			await this.env.wxstory_kv.put(messageKey, JSON.stringify(officeMessageData));
+			await this.env.wxstory_kv.put(officeMessageKey(office), JSON.stringify(officeMessageData));
 		});
 
 		const officeChannels = await step.do('Lookup office channels', async () => {
@@ -316,60 +325,110 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 		});
 
 		await step.do('Send messages', async () => {
-			await Promise.all(
-				officeChannels.map((channel) =>
-					step.do(`Send message to channel ${channel}`, async () => {
-						await RESTAPI.getInstance(this.env.DISCORD_BOT_TOKEN).post(Routes.channelMessages(channel), {
-							body: officeMessageData,
-						});
-					})
-				)
+			await this.env.SENDMESSAGE_WORKFLOW.createBatch(
+				officeChannels.map((channel) => ({
+					params: {
+						office: event.payload.office,
+						channel,
+					},
+				}))
 			);
+		});
+	}
+}
+
+export class SendMessageWorkflow extends WorkflowEntrypoint<Env, SendMessageParams> {
+	async run(event: Readonly<WorkflowEvent<SendMessageParams>>, step: WorkflowStep) {
+		const messageData = await step.do('Retreive message data from KV', async () => {
+			return await this.env.wxstory_kv.get<RESTPostAPIChannelMessageJSONBody>(officeMessageKey(event.payload.office.toLowerCase()), 'json');
+		});
+
+		if (!messageData) {
+			console.warn('Failed to get message data - returned null');
+			return;
+		}
+
+		await step.do('Send message', async () => {
+			await RESTAPI.getInstance(this.env.DISCORD_BOT_TOKEN).post(Routes.channelMessages(event.payload.channel), {
+				body: messageData,
+			});
 		});
 	}
 }
 
 export class SubscribeChannelWorkflow extends WorkflowEntrypoint<Env, SubscribeParams> {
 	async run(event: Readonly<WorkflowEvent<SubscribeParams>>, step: WorkflowStep) {
-		try {
-			await step.do('Create subscription in database', async () => {
-				const { office, guild, channel } = event.payload;
+		const alreadySubscribed = await step.do('Check if this subscription already exists', async () => {
+			const { office, channel } = event.payload;
 
-				const statement = this.env.DB.prepare(`
-					INSERT INTO Subscriptions (OfficeId, GuildId, ChannelId)
-					VALUES (
-						(SELECT OfficeId FROM Offices WHERE CallSign = ?1)
-					, ?2, ?3)
-					RETURNING id;
-				`);
+			const statement = this.env.DB.prepare(`
+				SELECT id FROM Subscriptions
+				WHERE
+					OfficeId = (SELECT OfficeId FROM Offices WHERE CallSign = ?1)
+					AND ChannelId = ?2;
+			`);
 
-				const { results } = await statement.bind(office, guild, channel).run<{ id: number }>();
+			const { results } = await statement.bind(office, channel).run<{ id: number }>();
 
-				return results[0].id;
-			});
-		} catch (e) {
-			console.error(e);
+			return results.length > 0;
+		});
 
-			await step.do('Acknowledge subscription failure', async () => {
+		if (alreadySubscribed) {
+			await step.do('Acknowledge already subscribed', async () => {
 				await RESTAPI.getInstance(this.env.DISCORD_BOT_TOKEN).patch(Routes.webhookMessage(this.env.DISCORD_APP_ID, event.payload.token), {
 					body: {
-						content: `**Could not subscribe <#${event.payload.channel}> to updates from office ${event.payload.office}!**`,
+						content: `<#${event.payload.channel}> is already subscribed to updates from office ${event.payload.office}`,
 					} satisfies RESTPatchAPIWebhookWithTokenMessageJSONBody,
 				});
 			});
+		} else {
+			try {
+				await step.do('Create subscription in database', async () => {
+					const { office, guild, channel } = event.payload;
 
-			throw e;
+					const statement = this.env.DB.prepare(`
+						INSERT INTO Subscriptions (OfficeId, GuildId, ChannelId)
+						VALUES (
+							(SELECT OfficeId FROM Offices WHERE CallSign = ?1)
+						, ?2, ?3)
+						RETURNING id;
+					`);
+
+					const { results } = await statement.bind(office, guild, channel).run<{ id: number }>();
+
+					return results[0].id;
+				});
+			} catch (e) {
+				console.error(e);
+
+				await step.do('Acknowledge subscription failure', async () => {
+					await RESTAPI.getInstance(this.env.DISCORD_BOT_TOKEN).patch(Routes.webhookMessage(this.env.DISCORD_APP_ID, event.payload.token), {
+						body: {
+							content: `**Could not subscribe <#${event.payload.channel}> to updates from office ${event.payload.office}!**`,
+						} satisfies RESTPatchAPIWebhookWithTokenMessageJSONBody,
+					});
+				});
+
+				throw e;
+			}
+
+			await step.do('Acknowledge subscription success', async () => {
+				await RESTAPI.getInstance(this.env.DISCORD_BOT_TOKEN).patch(Routes.webhookMessage(this.env.DISCORD_APP_ID, event.payload.token), {
+					body: {
+						content: `Successfully subscribed <#${event.payload.channel}> to updates from office ${event.payload.office}`,
+					} satisfies RESTPatchAPIWebhookWithTokenMessageJSONBody,
+				});
+			});
 		}
 
-		await step.do('Acknowledge subscription success', async () => {
-			await RESTAPI.getInstance(this.env.DISCORD_BOT_TOKEN).patch(Routes.webhookMessage(this.env.DISCORD_APP_ID, event.payload.token), {
-				body: {
-					content: `Successfully subscribed <#${event.payload.channel}> to updates from office ${event.payload.office}`,
-				} satisfies RESTPatchAPIWebhookWithTokenMessageJSONBody,
+		await step.do('Send current weather story to channel', async () => {
+			await this.env.SENDMESSAGE_WORKFLOW.create({
+				params: {
+					office: event.payload.office.toLowerCase(),
+					channel: event.payload.channel,
+				},
 			});
 		});
-
-		// TODO: Enqueue current weather story to send
 	}
 }
 

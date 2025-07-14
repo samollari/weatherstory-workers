@@ -23,6 +23,11 @@
 			"class_name": "WXStoryPerOfficeWorkflow"
 		},
 		{
+			"name": "wxstory-sendmessage",
+			"binding": "SENDMESSAGE_WORKFLOW",
+			"class_name": "SendMessageWorkflow"
+		},
+		{
 			"name": "wxstory-subscribe",
 			"binding": "SUBSCRIBE_WORKFLOW",
 			"class_name": "SubscribeChannelWorkflow"
