@@ -7,7 +7,9 @@
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "^4.20250417.0",
+		"@types/command-line-args": "^5.2.3",
 		"@types/node": "^24.0.10",
+		"tsx": "^4.20.3",
 		"typescript": "^5.0.4",
 		"wrangler": "^4.23.0"
 	},
@@ -21,7 +23,12 @@
 		}
 	},
 	"dependencies": {
+		"@discordjs/rest": "^2.5.1",
 		"@nrsk/unindent": "^1.1.0",
-		"@tsndr/cloudflare-worker-router": "^3.2.10"
+		"@tsndr/cloudflare-worker-router": "^3.2.10",
+		"command-line-args": "^6.0.1",
+		"discord-api-types": "^0.38.15",
+		"discord-interactions": "^4.3.0",
+		"dotenv": "^17.2.0"
 	}
 }

@@ -3,10 +3,23 @@ import un from '@nrsk/unindent';
 import { Router } from '@tsndr/cloudflare-worker-router';
 import { WorkflowEntrypoint, WorkflowStep, WorkflowEvent } from 'cloudflare:workers';
 import { basename } from 'node:path/posix';
+import { verifyKey } from 'discord-interactions';
+import {
+	APIChatInputApplicationCommandInteraction,
+	APIInteraction,
+	ApplicationCommandType,
+	InteractionResponseType,
+	InteractionType,
+} from 'discord-api-types/payloads';
+import { RESTPatchAPIWebhookWithTokenMessageJSONBody, RESTPostAPIChannelMessageJSONBody, Routes } from 'discord-api-types/v10';
+import { commands, deploy, RESTAPI } from './interaction';
 
-type Env = {
+export type Env = {
 	START_WX_STORY_UPDATE_WORKFLOW: Workflow<StartParams>;
 	WX_STORY_PER_OFFICE_WORKFLOW: Workflow<OfficeParams>;
+	SUBSCRIBE_WORKFLOW: Workflow<SubscribeParams>;
+	UNSUBSCRIBE_WORKFLOW: Workflow<UnsubscribeParams>;
+
 	wxstory_kv: KVNamespace;
 	wxstory_images: R2Bucket;
 	DB: D1Database;
@@ -16,7 +29,9 @@ type Env = {
 	USER_AGENT: string;
 
 	// Secrets
+	DISCORD_APP_ID: string;
 	DISCORD_PUBLIC_KEY: string;
+	DISCORD_BOT_TOKEN: string;
 };
 
 // User-defined params passed to your workflow
@@ -28,6 +43,21 @@ type OfficeParams = {
 	office: string;
 	officeId: number;
 } & StartParams;
+
+type SubscribeParams = {
+	office: string;
+	guild?: string;
+	channel: string;
+	/** Interaction continuation token */
+	token: string;
+};
+
+type UnsubscribeParams = {
+	office?: string;
+	channel: string;
+	/** Interaction continuation token */
+	token: string;
+};
 
 function officePageURL(office: string): URL {
 	return new URL(`https://www.weather.gov/${office}/weatherstory`);
@@ -247,11 +277,14 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 			const { office } = event.payload;
 
 			return {
-				username: `${office.toUpperCase()} Weather Story`,
-				avatar_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/79/NOAA_logo.svg/240px-NOAA_logo.svg.png',
 				embeds: [
 					{
-						...storyDetails,
+						author: {
+							name: `${office.toUpperCase()} Weather Story`,
+							icon_url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/79/NOAA_logo.svg/240px-NOAA_logo.svg.png',
+						},
+						title: storyDetails.title,
+						description: storyDetails.description,
 						url: officePageURL(office).toString(),
 						timestamp: modifiedTimestamp,
 						color: 0x135897,
@@ -260,7 +293,7 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 						},
 					},
 				],
-			};
+			} satisfies RESTPostAPIChannelMessageJSONBody;
 		});
 		console.log({ officeMessageData });
 
@@ -270,32 +303,133 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 			await this.env.wxstory_kv.put(messageKey, JSON.stringify(officeMessageData));
 		});
 
-		const officeWebhooks = await step.do('Lookup office channels', async () => {
+		const officeChannels = await step.do('Lookup office channels', async () => {
 			const statement = this.env.DB.prepare(`
-				SELECT WebhookURL
+				SELECT ChannelId
 				FROM Subscriptions
 				WHERE OfficeId = ? AND (? = 0 OR dev = 1);
 			`); // If not dev run, picks any matching the office. If dev run, only selects dev channels
 			const { officeId } = event.payload;
 
-			const { results } = await statement.bind(officeId, event.payload.dev ?? false).run<{ WebhookURL: string }>();
-			return results.map(({ WebhookURL }) => WebhookURL);
+			const { results } = await statement.bind(officeId, event.payload.dev ?? false).run<{ ChannelId: string }>();
+			return results.map(({ ChannelId }) => ChannelId);
 		});
 
 		await step.do('Send messages', async () => {
 			await Promise.all(
-				officeWebhooks.map((webhook) =>
-					step.do(`Call webhook ${webhook.substring(webhook.length - 10)}`, async () => {
-						await fetch(webhook, {
-							method: 'POST',
-							body: JSON.stringify(officeMessageData),
-							headers: {
-								'Content-Type': 'application/json',
-							},
+				officeChannels.map((channel) =>
+					step.do(`Send message to channel ${channel}`, async () => {
+						await RESTAPI.getInstance(this.env.DISCORD_BOT_TOKEN).post(Routes.channelMessages(channel), {
+							body: officeMessageData,
 						});
 					})
 				)
 			);
+		});
+	}
+}
+
+export class SubscribeChannelWorkflow extends WorkflowEntrypoint<Env, SubscribeParams> {
+	async run(event: Readonly<WorkflowEvent<SubscribeParams>>, step: WorkflowStep) {
+		try {
+			await step.do('Create subscription in database', async () => {
+				const { office, guild, channel } = event.payload;
+
+				const statement = this.env.DB.prepare(`
+					INSERT INTO Subscriptions (OfficeId, GuildId, ChannelId)
+					VALUES (
+						(SELECT OfficeId FROM Offices WHERE CallSign = ?1)
+					, ?2, ?3)
+					RETURNING id;
+				`);
+
+				const { results } = await statement.bind(office, guild, channel).run<{ id: number }>();
+
+				return results[0].id;
+			});
+		} catch (e) {
+			console.error(e);
+
+			await step.do('Acknowledge subscription failure', async () => {
+				await RESTAPI.getInstance(this.env.DISCORD_BOT_TOKEN).patch(Routes.webhookMessage(this.env.DISCORD_APP_ID, event.payload.token), {
+					body: {
+						content: `**Could not subscribe <#${event.payload.channel}> to updates from office ${event.payload.office}!**`,
+					} satisfies RESTPatchAPIWebhookWithTokenMessageJSONBody,
+				});
+			});
+
+			throw e;
+		}
+
+		await step.do('Acknowledge subscription success', async () => {
+			await RESTAPI.getInstance(this.env.DISCORD_BOT_TOKEN).patch(Routes.webhookMessage(this.env.DISCORD_APP_ID, event.payload.token), {
+				body: {
+					content: `Successfully subscribed <#${event.payload.channel}> to updates from office ${event.payload.office}`,
+				} satisfies RESTPatchAPIWebhookWithTokenMessageJSONBody,
+			});
+		});
+
+		// TODO: Enqueue current weather story to send
+	}
+}
+
+export class UnsubscribeChannelWorkflow extends WorkflowEntrypoint<Env, UnsubscribeParams> {
+	async run(event: Readonly<WorkflowEvent<UnsubscribeParams>>, step: WorkflowStep) {
+		let subscriptionsRemoved: number;
+		try {
+			subscriptionsRemoved = await step.do('Remove subscription from database', async () => {
+				const { office, channel } = event.payload;
+
+				if (office) {
+					const statement = this.env.DB.prepare(`
+						DELETE FROM Subscriptions
+						WHERE
+							ChannelId = ?1
+							AND OfficeId = (
+								SELECT OfficeId FROM Offices
+								WHERE CallSign = ?2
+							)
+						RETURNING *;
+					`);
+
+					const { results } = await statement.bind(channel, office).run();
+
+					return results.length;
+				} else {
+					const statement = this.env.DB.prepare(`
+						DELETE FROM Subscriptions
+						WHERE ChannelId = ?1
+						RETURNING *;
+					`);
+
+					const { results } = await statement.bind(channel).run();
+
+					return results.length;
+				}
+			});
+		} catch (e) {
+			console.error(e);
+
+			await step.do('Acknowledge unsubscribe failure', async () => {
+				await RESTAPI.getInstance(this.env.DISCORD_BOT_TOKEN).patch(Routes.webhookMessage(this.env.DISCORD_APP_ID, event.payload.token), {
+					body: {
+						content: `**Could not unsubscribe <#${event.payload.channel}> from updates!**`,
+					} satisfies RESTPatchAPIWebhookWithTokenMessageJSONBody,
+				});
+			});
+
+			throw e;
+		}
+
+		await step.do('Acknowledge unsubscribe success', async () => {
+			const { office } = event.payload;
+			await RESTAPI.getInstance(this.env.DISCORD_BOT_TOKEN).patch(Routes.webhookMessage(this.env.DISCORD_APP_ID, event.payload.token), {
+				body: {
+					content: `Successfully unsubscribed <#${event.payload.channel}> from updates ${
+						office ? `from ${office}` : `from ${subscriptionsRemoved} office${subscriptionsRemoved === 1 ? '' : 's'}`
+					}`,
+				} satisfies RESTPatchAPIWebhookWithTokenMessageJSONBody,
+			});
 		});
 	}
 }
@@ -326,6 +460,51 @@ router.any('/invoke', async ({ req, env }) => {
 		details: await instance.status(),
 		force: dev,
 	});
+});
+
+router.any('/deploy', async ({ env }) => {
+	await deploy(env);
+});
+
+router.post('/interaction', async ({ req, env }) => {
+	const signature = req.headers.get('X-Signature-Ed25519');
+	const timestamp = req.headers.get('X-Signature-Timestamp');
+	if (!signature || !timestamp) {
+		return new Response('Missing required headers', { status: 400 });
+	}
+	const rawBody = await req.raw.clone().arrayBuffer();
+	const isValidRequest = await verifyKey(rawBody, signature, timestamp, env.DISCORD_PUBLIC_KEY);
+	if (!isValidRequest) {
+		return new Response('Bad request signature', { status: 401 });
+	}
+
+	const message = (await req.raw.json()) as APIInteraction;
+	console.log({ message });
+
+	if (message.type === InteractionType.Ping) {
+		return Response.json({
+			type: InteractionResponseType.Pong,
+		});
+	}
+
+	if (message.type === InteractionType.ApplicationCommand) {
+		if (message.data.type !== ApplicationCommandType.ChatInput) {
+			return Response.json({ error: 'Unsupported command type' }, { status: 400 });
+		}
+
+		const receivedCommandName = message.data.name;
+
+		if (!(receivedCommandName in commands.global)) {
+			return Response.json({ error: 'Unknown command' }, { status: 400 });
+		}
+
+		const command = commands.global[receivedCommandName as keyof typeof commands.global];
+
+		return await command.run(env, message as APIChatInputApplicationCommandInteraction);
+	}
+
+	console.error('Unknown interaction type');
+	return Response.json({ error: 'Unknown interaction type' }, { status: 400 });
 });
 
 // <docs-tag name="workflows-fetch-handler">

@@ -21,6 +21,16 @@
 			"name": "wxstory-peroffice",
 			"binding": "WX_STORY_PER_OFFICE_WORKFLOW",
 			"class_name": "WXStoryPerOfficeWorkflow"
+		},
+		{
+			"name": "wxstory-subscribe",
+			"binding": "SUBSCRIBE_WORKFLOW",
+			"class_name": "SubscribeChannelWorkflow"
+		},
+		{
+			"name": "wxstory-unsubscribe",
+			"binding": "UNSUBSCRIBE_WORKFLOW",
+			"class_name": "UnsubscribeChannelWorkflow"
 		}
 	],
 	/**
