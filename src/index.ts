@@ -13,6 +13,7 @@ import {
 } from 'discord-api-types/payloads';
 import { RESTPatchAPIWebhookWithTokenMessageJSONBody, RESTPostAPIChannelMessageJSONBody, Routes } from 'discord-api-types/v10';
 import { commands, deploy, RESTAPI } from './interaction';
+import { NodeHtmlMarkdown } from 'node-html-markdown';
 
 export type Env = {
 	START_WX_STORY_UPDATE_WORKFLOW: Workflow<StartParams>;
@@ -186,9 +187,11 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 				},
 			});
 
+			const nhm = new NodeHtmlMarkdown();
+
 			return {
-				title: queryResults.title[0],
-				description: queryResults.description[0],
+				title: nhm.translate(queryResults.title[0]),
+				description: nhm.translate(queryResults.description[0]),
 				imageURL: queryResults.imageURL[0],
 			};
 		});
@@ -421,6 +424,8 @@ export class SubscribeChannelWorkflow extends WorkflowEntrypoint<Env, SubscribeP
 			});
 		}
 
+		// TODO: If this is the first subscription to this office, run a manual update
+
 		await step.do('Send current weather story to channel', async () => {
 			await this.env.SENDMESSAGE_WORKFLOW.create({
 				params: {
@@ -523,6 +528,7 @@ router.any('/invoke', async ({ req, env }) => {
 
 router.any('/deploy', async ({ env }) => {
 	await deploy(env);
+	return new Response('ok');
 });
 
 router.post('/interaction', async ({ req, env }) => {
