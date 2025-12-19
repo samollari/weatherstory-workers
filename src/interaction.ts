@@ -17,7 +17,7 @@ import {
 	Routes,
 	Snowflake,
 } from 'discord-api-types/v10';
-import type { Env } from '.';
+import type { Env } from './env';
 import { DiscordAPIError, REST } from '@discordjs/rest';
 
 export class RESTAPI {
