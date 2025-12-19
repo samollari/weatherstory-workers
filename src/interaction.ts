@@ -1,6 +1,10 @@
 import {
 	APIApplicationCommand,
+	APIApplicationCommandIntegerOptionBase,
 	APIApplicationCommandInteractionDataOption,
+	APIApplicationCommandOption,
+	APIApplicationCommandOptionChoice,
+	APIApplicationCommandOptionWithAutocompleteOrChoicesWrapper,
 	APIChatInputApplicationCommandInteraction,
 	APIInteractionResponseDeferredChannelMessageWithSource,
 	ApplicationCommandOptionType,
@@ -14,7 +18,7 @@ import {
 	Snowflake,
 } from 'discord-api-types/v10';
 import type { Env } from '.';
-import { REST } from '@discordjs/rest';
+import { DiscordAPIError, REST } from '@discordjs/rest';
 
 export class RESTAPI {
 	private static state: { token: string; rest: REST } | undefined = undefined;
@@ -34,13 +38,41 @@ export class RESTAPI {
 	}
 }
 
-const supportedSelfServiceOffices = [
-	// TODO: Dynamically generate these choices from the database of supported offices when invoked
-	{
-		name: 'BOX - Boston/Norton, MA',
-		value: 'BOX',
-	},
-];
+type StringOptionChoices = APIApplicationCommandOptionChoice<string>[];
+class OptionsGetter {
+	private static memoizationMap = new Map<Env, Promise<StringOptionChoices> | StringOptionChoices>();
+	public static async getOptions(env: Env): Promise<StringOptionChoices> {
+		const memoizedStatus = this.memoizationMap.get(env);
+		if (typeof memoizedStatus === 'object') {
+			if (memoizedStatus instanceof Promise) {
+				console.info('options in-progress hit');
+			} else {
+				console.info('options cache hit');
+			}
+			return memoizedStatus;
+		}
+		console.info('options cache miss');
+
+		const promise = this.fetchOptions(env);
+		this.memoizationMap.set(env, promise);
+		const choices = await promise;
+		this.memoizationMap.set(env, choices);
+
+		console.log({ choices });
+
+		return choices;
+	}
+
+	private static async fetchOptions(env: Env): Promise<StringOptionChoices> {
+		const statement = env.DB.prepare(
+			`SELECT CallSign, OfficeName FROM Offices WHERE PageRelativePath = '/weatherstory' AND StoryType = 'tabs';`
+		);
+		return (await statement.run()).results.map((result) => ({
+			value: `${result.CallSign}`,
+			name: `${result.CallSign} - ${result.OfficeName}`,
+		}));
+	}
+}
 
 type CommandName = keyof typeof commands.global;
 
@@ -89,6 +121,40 @@ function getCommandOptionValue<
 	return foundOptionValue;
 }
 
+// type T = Extract<
+// 	APIApplicationCommandOption,
+// 	APIApplicationCommandOptionWithAutocompleteOrChoicesWrapper<any, APIApplicationCommandOptionChoice<any>>
+// >;
+// type OptionsWithCallableChoices = APIApplicationCommandOption extends T
+// 	? Omit<T, 'choices'> & { choices: () => T['choices'] }
+// 	: APIApplicationCommandOption;
+type CallableChoices<
+	T extends ApplicationCommandOptionType,
+	S = T extends ApplicationCommandOptionType.String | ApplicationCommandOptionType.Number ? true : false,
+	O = S extends true ? APIApplicationCommandOptionChoice<T extends ApplicationCommandOptionType.String ? string : number>[] : never
+> = S extends true
+	? {
+			choices: (env: Env) => Promise<O> | O;
+	  }
+	: {};
+type OptionWithCallableChoices<
+	T extends ApplicationCommandOptionType,
+	O = Omit<Extract<APIApplicationCommandOption, { type: T }>, 'choices'>
+> = O & CallableChoices<T>;
+
+type CommandDefinitions = {
+	global: {
+		[key: string]: {
+			description: APIApplicationCommand['description'];
+			options: (
+				| OptionWithCallableChoices<ApplicationCommandOptionType.String>
+				| OptionWithCallableChoices<ApplicationCommandOptionType.Number>
+			)[];
+			run(env: Env, message: APIChatInputApplicationCommandInteraction): Promise<Response> | Response;
+		};
+	};
+};
+
 export const commands = {
 	global: {
 		subscribe: {
@@ -99,7 +165,7 @@ export const commands = {
 					required: true,
 					name: 'office',
 					description: 'Office to get updates from',
-					choices: supportedSelfServiceOffices,
+					choices: (env: Env) => OptionsGetter.getOptions(env),
 					min_length: 3,
 					max_length: 3,
 				},
@@ -130,7 +196,7 @@ export const commands = {
 					type: ApplicationCommandOptionType.String,
 					name: 'office',
 					description: 'Office to unsubscribe from',
-					choices: supportedSelfServiceOffices, // TODO: Autocomplete based on current subscriptions
+					choices: (env: Env) => OptionsGetter.getOptions(env), // TODO: Autocomplete based on current subscriptions
 					min_length: 3,
 					max_length: 3,
 				},
@@ -155,15 +221,10 @@ export const commands = {
 		},
 		// 'getstory': {}
 	},
-} as const satisfies {
-	global: {
-		[key: string]: Pick<APIApplicationCommand, 'description' | 'options'> & {
-			run(env: Env, message: APIChatInputApplicationCommandInteraction): Promise<Response> | Response;
-		};
-	};
-};
+} as const satisfies CommandDefinitions;
 
-export async function deploy({ DISCORD_APP_ID, DISCORD_BOT_TOKEN }: Pick<Env, 'DISCORD_APP_ID' | 'DISCORD_BOT_TOKEN'>, guild?: Snowflake) {
+export async function deploy(env: Env, guild?: Snowflake) {
+	const { DISCORD_APP_ID, DISCORD_BOT_TOKEN } = env;
 	const route = guild ? Routes.applicationGuildCommands(DISCORD_APP_ID, guild) : Routes.applicationCommands(DISCORD_APP_ID);
 
 	const rest = RESTAPI.getInstance(DISCORD_BOT_TOKEN);
@@ -174,22 +235,33 @@ export async function deploy({ DISCORD_APP_ID, DISCORD_BOT_TOKEN }: Pick<Env, 'D
 
 	const currentCommandNames = Object.keys(commands.global) as (keyof typeof commands.global)[];
 
-	const builtCommandList = currentCommandNames.map((name) => {
-		const { description, options } = commands.global[name];
-		const definition = {
-			id: existingCommandIdMap[name],
-			type: ApplicationCommandType.ChatInput as const,
-			name,
-			description,
-			options,
-		};
-		return definition;
-	}) satisfies RESTPutAPIApplicationCommandsJSONBody & RESTPutAPIApplicationGuildCommandsJSONBody;
+	const builtCommandList = (await Promise.all(
+		currentCommandNames.map(async (name) => {
+			const { description, options } = (commands as CommandDefinitions).global[name];
+			const definition = {
+				id: existingCommandIdMap[name],
+				type: ApplicationCommandType.ChatInput as const,
+				name,
+				description,
+				options: (await Promise.all(
+					options.map(async ({ choices, ...restParams }) => ({ ...restParams, choices: await choices(env) }))
+				)) as APIApplicationCommandOption[], // FIXME: I would love this to be a "satisfies" or not exist at all. Unfortunately, my type hacking is hacky
+			};
+			return definition;
+		})
+	)) satisfies RESTPutAPIApplicationCommandsJSONBody & RESTPutAPIApplicationGuildCommandsJSONBody;
 
 	console.log('Built command list:', builtCommandList);
 
-	const responseCommands = (await rest.put(route, {
-		body: builtCommandList,
-	})) as RESTPutAPIApplicationGuildCommandsJSONBody;
-	console.log({ responseCommands });
+	try {
+		const responseCommands = (await rest.put(route, {
+			body: builtCommandList,
+		})) as RESTPutAPIApplicationGuildCommandsJSONBody;
+		console.log({ responseCommands });
+	} catch (e) {
+		if (e instanceof DiscordAPIError) {
+			console.log(JSON.stringify(e.rawError));
+		}
+		throw e;
+	}
 }

@@ -14,6 +14,7 @@ import {
 import { RESTPatchAPIWebhookWithTokenMessageJSONBody, RESTPostAPIChannelMessageJSONBody, Routes } from 'discord-api-types/v10';
 import { commands, deploy, RESTAPI } from './interaction';
 import { NodeHtmlMarkdown } from 'node-html-markdown';
+import { table } from 'node:console';
 
 export type Env = {
 	START_WX_STORY_UPDATE_WORKFLOW: Workflow<StartParams>;
@@ -21,6 +22,7 @@ export type Env = {
 	SENDMESSAGE_WORKFLOW: Workflow<SendMessageParams>;
 	SUBSCRIBE_WORKFLOW: Workflow<SubscribeParams>;
 	UNSUBSCRIBE_WORKFLOW: Workflow<UnsubscribeParams>;
+	DEPLOY_WORKFLOW: Workflow<DeployParams>;
 
 	wxstory_kv: KVNamespace;
 	wxstory_images: R2Bucket;
@@ -64,6 +66,11 @@ type UnsubscribeParams = {
 	channel: string;
 	/** Interaction continuation token */
 	token: string;
+};
+
+type DeployParams = {
+	guild?: string;
+	limit?: number;
 };
 
 function officePageURL(office: string): URL {
@@ -319,7 +326,7 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 			const statement = this.env.DB.prepare(`
 				SELECT ChannelId
 				FROM Subscriptions
-				WHERE OfficeId = ? AND (? = 0 OR dev = 1);
+				WHERE OfficeId = ?1 AND (?2 = 0 OR dev = 1);
 			`); // If not dev run, picks any matching the office. If dev run, only selects dev channels
 			const { officeId } = event.payload;
 
@@ -498,6 +505,161 @@ export class UnsubscribeChannelWorkflow extends WorkflowEntrypoint<Env, Unsubscr
 	}
 }
 
+// prettier-ignore
+const NWS_OFFICES = ['afg','afc','ajk','sew','pqr','otx','pdt','mso','boi','tfx','ggw','pih','sto','eka','mtr','lox','mfr','rev','hnx','sgx','lkn','vef','psr','slc','riw','byz','fgz','twc','elp','abq','ama','lub','maf','sjt','ewx','crp','bro','hgx','fwd','oun','shv','lch','tsa','lzk','lix','jan','meg','mob','bmx','hun','ohx','gum','hfo','sju','key','mfl','mlb','tbw','tae','jax','ffc','bou','gjt','pub','gld','ddc','unr','abr','bis','fgf','cys','lbf','gid','ict','top','oax','fsd','mpx','eax','sgf','arx','dmx','mqt','dlh','grb','dvn','pah','lsx','ilx','lot','mkx','apx','grr','iwx','ind','lmk','dtx','iln','rlx','pbz','jkl','chs','cae','gsp','mrx','rnk','ilm','rah','mhx','akq','lwx','cle','buf','ctp','okx','phi','bgm','aly','btv','box','gyx','car'] as const;
+type Office = (typeof NWS_OFFICES)[number];
+const WSPagePath = '/weatherstory';
+const HomePagePath = '/';
+
+const WSTypeTabs = 'tabs';
+const WSTypeTable = 'wstable';
+
+type QueryValues = (
+	| {
+			path: typeof WSPagePath;
+			type: typeof WSTypeTabs;
+	  }
+	| { path: typeof HomePagePath; type: typeof WSTypeTabs | typeof WSTypeTable }
+	| { path: null; type: null }
+) & { callSign: Uppercase<Office> };
+
+function uppercaseOffice<O extends Office>(office: O) {
+	return office.toUpperCase() as Uppercase<O>;
+}
+
+export class DeployWorkflow extends WorkflowEntrypoint<Env, DeployParams> {
+	async run(event: Readonly<WorkflowEvent<DeployParams>>, step: WorkflowStep): Promise<void> {
+		const offices = await step.do('Collect offices for this run', async () =>
+			event.payload.limit !== undefined ? NWS_OFFICES.slice(0, event.payload.limit) : NWS_OFFICES
+		);
+		const [officesUsingWxStoryPage, officesNotUsingWxStoryPage] = await step.do('Determine whether offices use WX Story page', async () => {
+			const officesUseWxStoryPage = await Promise.all(
+				offices.map(
+					async (office) =>
+						[
+							office,
+							await step.do(`Fetch weatherstory page for office ${office}`, async () => {
+								const response = await fetch(`https://www.weather.gov/${office}/weatherstory`, {
+									headers: {
+										'User-Agent': this.env.USER_AGENT,
+									},
+									method: 'HEAD',
+								});
+								if (!response.ok && response.status != 404) {
+									console.error(response.status, response.statusText, await response.text());
+								}
+								return response.ok;
+							}),
+						] as const
+				)
+			);
+
+			const officesUsingWxStoryPage: Office[] = [],
+				officesNotUsingWxStoryPage: Office[] = [];
+
+			for (const [office, usingWxStoryPage] of officesUseWxStoryPage) {
+				if (usingWxStoryPage) {
+					officesUsingWxStoryPage.push(office);
+				} else {
+					officesNotUsingWxStoryPage.push(office);
+				}
+			}
+
+			return [officesUsingWxStoryPage, officesNotUsingWxStoryPage];
+		});
+
+		const officeHomePageStoryMethod = await step.do(
+			'Determine where on the home page WX Story is for offices that do not use a discrete page',
+			async () => {
+				const homePageMethods = await Promise.all(
+					officesNotUsingWxStoryPage.map(
+						async (office) =>
+							[
+								office,
+								await step.do(`Determine home page WX Story method for office ${office}`, async () => {
+									const response = await fetch(`https://www.weather.gov/${office}`, {
+										headers: {
+											'User-Agent': this.env.USER_AGENT,
+										},
+									});
+									if (!response.ok || !response.body) {
+										console.error(response.status, response.statusText, await response.text());
+										return 'unsure';
+									}
+
+									const queryResults = await htmlQuery(response.body, {
+										table: { query: '#WStable' },
+										graphicast: { query: '#tabs .graphicast' },
+										// image: { query: 'img', attribute: 'src' },
+									});
+
+									if (queryResults.table.length != 0) {
+										return 'wstable';
+									}
+
+									if (queryResults.graphicast.length != 0) {
+										return 'tabs';
+									}
+
+									// if (queryResults.image.some((v) => v.toLowerCase().includes('weatherstory'))) {
+									// 	return 'image';
+									// }
+
+									return 'unsure';
+								}),
+							] as const
+					)
+				);
+
+				const officeMethods: {
+					[key in (typeof homePageMethods)[number][1]]: Office[];
+				} = {
+					unsure: [],
+					wstable: [],
+					tabs: [],
+					// image: []
+				};
+
+				for (const [office, method] of homePageMethods) {
+					officeMethods[method].push(office);
+				}
+
+				return officeMethods;
+			}
+		);
+
+		const dbQueryValues = await step.do(
+			'Collect query values for methods',
+			async () =>
+				[
+					...officesUsingWxStoryPage.map((office) => ({ path: '/weatherstory', type: 'tabs', callSign: uppercaseOffice(office) } as const)),
+					...officeHomePageStoryMethod.wstable.map(
+						(office) => ({ path: '/', type: 'wstable', callSign: uppercaseOffice(office) } as const)
+					),
+					...officeHomePageStoryMethod.tabs.map((office) => ({ path: '/', type: 'tabs', callSign: uppercaseOffice(office) } as const)),
+					...officeHomePageStoryMethod.unsure.map((office) => ({ path: null, type: null, callSign: uppercaseOffice(office) } as const)),
+				] satisfies QueryValues[]
+		);
+		console.log({ dbQueryValues });
+
+		await step.do('Run database updates', async () => {
+			const statement = this.env.DB.prepare(`UPDATE Offices SET PageRelativePath = ?1, StoryType = ?2 WHERE CallSign = ?3;`);
+
+			return Promise.all(
+				dbQueryValues.map((v: QueryValues) =>
+					step.do(`Update DB method for office ${v.callSign}`, async () => {
+						await statement.bind(v.path, v.type, v.callSign).run();
+					})
+				)
+			);
+		});
+
+		await step.do('Publish commands to Discord', async () => {
+			await deploy(this.env, event.payload.guild);
+		});
+	}
+}
+
 const router = new Router<Env>();
 
 router.get('/status', async ({ req, env }) => {
@@ -526,8 +688,17 @@ router.any('/invoke', async ({ req, env }) => {
 	});
 });
 
-router.any('/deploy', async ({ env }) => {
-	await deploy(env);
+router.any('/deploy', async ({ req, env }) => {
+	const limit = 'limit' in req.query ? parseInt(req.query.limit) : undefined;
+	const guild = req.query['guild'];
+
+	await env.DEPLOY_WORKFLOW.create({
+		params: {
+			limit,
+			guild,
+		},
+	});
+
 	return new Response('ok');
 });
 

@@ -36,6 +36,11 @@
 			"name": "wxstory-unsubscribe",
 			"binding": "UNSUBSCRIBE_WORKFLOW",
 			"class_name": "UnsubscribeChannelWorkflow"
+		},
+		{
+			"name": "wxstory-deploy",
+			"binding": "DEPLOY_WORKFLOW",
+			"class_name": "DeployWorkflow"
 		}
 	],
 	/**
