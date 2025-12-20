@@ -121,7 +121,7 @@ type AutocompletableChoices<
 	O = S extends true ? ChoiceForOptionType<T>[] : never
 > = S extends true
 	? {
-			autocomplete: (env: Env, value: V, interaction?: APIAutocompleteApplicationCommandInteractionData) => Promise<O> | O;
+			autocomplete: (env: Env, value: V, interaction: APIApplicationCommandAutocompleteInteraction) => Promise<O> | O;
 			choices?: [];
 	  }
 	: {};

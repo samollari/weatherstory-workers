@@ -1,5 +1,5 @@
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
-import { Env, StartParams } from '..';
+import { Env } from '../../env';
 
 // <docs-tag name="workflow-entrypoint">
 

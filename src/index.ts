@@ -88,7 +88,7 @@ router.post('/interaction', async ({ req, env }) => {
 	}
 
 	const message = (await req.raw.json()) as APIInteraction;
-	console.log({ message });
+	// console.log({ message });
 
 	if (message.type === InteractionType.Ping) {
 		return Response.json({
@@ -134,7 +134,7 @@ router.post('/interaction', async ({ req, env }) => {
 			return Response.json({ error: 'Focused option not found in definition' }, { status: 500 });
 		}
 
-		const choices = await optionDefinition.autocomplete(env, focusedOption.value);
+		const choices = await optionDefinition.autocomplete(env, focusedOption.value, message);
 
 		return Response.json({
 			type: InteractionResponseType.ApplicationCommandAutocompleteResult,

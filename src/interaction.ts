@@ -15,16 +15,16 @@ import { DiscordAPIError } from '@discordjs/rest';
 import { CommandDefinitions, getCommandOptionValue, RESTAPI } from './util/interaction-helpers';
 import { CapsOffice } from './util/offices';
 
-async function autocompleteOffices(env: Env, value: string) {
-	console.log(`Autocomplete "${value}"`);
+async function autocompleteOffices(env: Env, value: string, channelId?: Snowflake) {
+	// console.log(`Autocomplete "${value}"`);
 	const statement = env.DB.prepare(`
 		SELECT 
-			CallSign, 
+			CallSign,
 			OfficeName, 
 			MIN(Priority) AS TopPriority
 		FROM (
 			-- Priority 1: Call sign starts with search term
-			SELECT CallSign, OfficeName, 1 AS Priority
+			SELECT OfficeId, CallSign, OfficeName, 1 AS Priority
 			FROM Offices
 			WHERE
 				CallSign LIKE ?1
@@ -33,7 +33,7 @@ async function autocompleteOffices(env: Env, value: string) {
 			UNION ALL
 
 			-- Priority 2: Office name starts with search term
-			SELECT CallSign, OfficeName, 2 as Priority
+			SELECT OfficeId, CallSign, OfficeName, 2 as Priority
 			FROM Offices
 			WHERE
 				OfficeName LIKE ?1
@@ -42,12 +42,17 @@ async function autocompleteOffices(env: Env, value: string) {
 			UNION ALL
 			
 			-- Priority 3: search term is in call sign OR in the OfficeName
-			SELECT CallSign, OfficeName, 3 AS Priority
+			SELECT OfficeId, CallSign, OfficeName, 3 AS Priority
 			FROM Offices
 			WHERE
 				CallSign LIKE ?2
 				OR OfficeName LIKE ?2
 				AND Supported = 1
+		)
+		WHERE NOT ?3 OR OfficeId IN (
+			SELECT OfficeId
+			FROM Subscriptions
+			WHERE ChannelId = ?4
 		)
 		GROUP BY CallSign
 		ORDER BY TopPriority ASC
@@ -55,7 +60,7 @@ async function autocompleteOffices(env: Env, value: string) {
 	`);
 
 	const { results } = await statement
-		.bind(`${value}%`, `%${value}%`)
+		.bind(`${value}%`, `%${value}%`, !!channelId, channelId ?? '')
 		.run<{ CallSign: CapsOffice; OfficeName: string; TopPriority: number }>();
 
 	return results.map((result) => ({
@@ -105,7 +110,7 @@ export const commands = {
 					type: ApplicationCommandOptionType.String,
 					name: 'office',
 					description: 'Office to unsubscribe from',
-					autocomplete: (env, value) => autocompleteOffices(env, value), // TODO: Autocomplete based on current subscriptions
+					autocomplete: (env, value, interaction) => autocompleteOffices(env, value, interaction.channel?.id),
 					min_length: 3,
 					max_length: 3,
 				},

@@ -22,7 +22,7 @@ export class UnsubscribeChannelWorkflow extends WorkflowEntrypoint<Env, Unsubscr
 						RETURNING *;
 					`);
 
-					const { results } = await statement.bind(channel, office).run();
+					const { results } = await statement.bind(channel, office.toUpperCase()).run();
 
 					return results.length;
 				} else {

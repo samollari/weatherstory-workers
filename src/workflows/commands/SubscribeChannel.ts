@@ -69,15 +69,39 @@ export class SubscribeChannelWorkflow extends WorkflowEntrypoint<Env, SubscribeP
 			});
 		}
 
-		// TODO: If this is the first subscription to this office, run a manual update
-		await step.do('Send current weather story to channel', async () => {
-			await this.env.SENDMESSAGE_WORKFLOW.create({
-				params: {
-					office: event.payload.office.toLowerCase(),
-					channel: event.payload.channel,
-				},
-			});
+		const officeId = await step.do('Get Office ID for further steps', async () => {
+			const { office } = event.payload;
+			const statement = this.env.DB.prepare(`SELECT OfficeId FROM Offices WHERE CallSign = ?`);
+			const { results } = await statement.bind(office.toUpperCase()).run<{ OfficeId: number }>();
+			return results[0].OfficeId;
 		});
+
+		const isFirstSubscription = await step.do('Get count of subscriptions to this office', async () => {
+			const statement = this.env.DB.prepare(`SELECT COUNT(id) FROM Subscriptions WHERE OfficeId = ?`);
+			const { results } = await statement.bind(officeId).run<{ 'COUNT(id)': number }>();
+			return results[0]['COUNT(id)'] == 1;
+		});
+
+		if (isFirstSubscription) {
+			await step.do('Run update for this office to send current weather story', async () => {
+				await this.env.WX_STORY_PER_OFFICE_WORKFLOW.create({
+					params: {
+						office: event.payload.office.toLowerCase(),
+						officeId,
+						dev: false,
+					},
+				});
+			});
+		} else {
+			await step.do('Send current weather story to channel', async () => {
+				await this.env.SENDMESSAGE_WORKFLOW.create({
+					params: {
+						office: event.payload.office.toLowerCase(),
+						channel: event.payload.channel,
+					},
+				});
+			});
+		}
 	}
 }
 export type SubscribeParams = {
