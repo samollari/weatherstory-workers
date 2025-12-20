@@ -1,5 +1,7 @@
-export function officePageURL(office: string): URL {
-	return new URL(`https://www.weather.gov/${office}/weatherstory`);
+import { PagePath } from '../workflows';
+
+export function officePageURL(office: string, path: PagePath): URL {
+	return new URL(`https://www.weather.gov/${office}${path == PagePath.WSPage ? '/weatherstory' : '/'}`);
 }
 export function officeMessageKey(office: string) {
 	return `${office}-message` as const;

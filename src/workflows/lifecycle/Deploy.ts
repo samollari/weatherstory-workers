@@ -108,11 +108,15 @@ export class DeployWorkflow extends WorkflowEntrypoint<Env, DeployParams> {
 			'Collect query values for methods',
 			async () =>
 				[
-					...officesUsingWxStoryPage.map((office) => ({ path: '/weatherstory', type: 'tabs', callSign: uppercaseOffice(office) } as const)),
-					...officeHomePageStoryMethod.wstable.map(
-						(office) => ({ path: '/', type: 'wstable', callSign: uppercaseOffice(office) } as const)
+					...officesUsingWxStoryPage.map(
+						(office) => ({ path: PagePath.WSPage, type: WSType.Tabs, callSign: uppercaseOffice(office) } as const)
 					),
-					...officeHomePageStoryMethod.tabs.map((office) => ({ path: '/', type: 'tabs', callSign: uppercaseOffice(office) } as const)),
+					...officeHomePageStoryMethod.wstable.map(
+						(office) => ({ path: PagePath.HomePage, type: WSType.Table, callSign: uppercaseOffice(office) } as const)
+					),
+					...officeHomePageStoryMethod.tabs.map(
+						(office) => ({ path: PagePath.HomePage, type: WSType.Tabs, callSign: uppercaseOffice(office) } as const)
+					),
 					...officeHomePageStoryMethod.unsure.map((office) => ({ path: null, type: null, callSign: uppercaseOffice(office) } as const)),
 				] satisfies QueryValues[]
 		);
@@ -139,16 +143,20 @@ export type DeployParams = {
 	guild?: string;
 	limit?: number;
 };
-const WSPagePath = '/weatherstory';
-const HomePagePath = '/';
-const WSTypeTabs = 'tabs';
-const WSTypeTable = 'wstable';
+export enum PagePath {
+	WSPage = '/weatherstory',
+	HomePage = '/',
+}
+export enum WSType {
+	Tabs = 'tabs',
+	Table = 'wstable',
+}
 
 export type QueryValues = (
 	| {
-			path: typeof WSPagePath;
-			type: typeof WSTypeTabs;
+			path: PagePath.WSPage;
+			type: WSType.Tabs;
 	  }
-	| { path: typeof HomePagePath; type: typeof WSTypeTabs | typeof WSTypeTable }
+	| { path: PagePath.HomePage; type: WSType.Tabs | WSType.Table }
 	| { path: null; type: null }
 ) & { callSign: Uppercase<Office> };

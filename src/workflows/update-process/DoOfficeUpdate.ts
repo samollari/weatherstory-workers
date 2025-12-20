@@ -6,13 +6,25 @@ import { StartParams } from './StartUpdate';
 import { Env } from '../../env';
 import { officePageURL, officeMessageKey } from '../../util/offices';
 import { htmlQuery } from '../../util/htmlquery';
+import { PagePath, WSType } from '../lifecycle';
 
 export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficeParams> {
 	async run(event: Readonly<WorkflowEvent<OfficeParams>>, step: WorkflowStep) {
+		const pageType = await step.do('Get page type', async () => {
+			const { officeId } = event.payload;
+			const statement = this.env.DB.prepare('SELECT PageRelativePath, StoryType FROM Offices WHERE OfficeId = ?');
+			const { results } = await statement.bind(officeId).run<{ PageRelativePath: PagePath | null; StoryType: WSType | null }>();
+			return results[0];
+		});
+
+		if (pageType.StoryType !== WSType.Tabs || pageType.PageRelativePath === null) {
+			return;
+		}
+
 		// TODO: Support multiple tabs/stories
 		const pageContent = await step.do('Fetch WX Story page content', async () => {
 			const { office } = event.payload;
-			const response = await fetch(officePageURL(office), {
+			const response = await fetch(officePageURL(office, pageType.PageRelativePath!), {
 				headers: {
 					'User-Agent': this.env.USER_AGENT,
 				},
@@ -146,7 +158,7 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 						},
 						title: storyDetails.title,
 						description: storyDetails.description,
-						url: officePageURL(office).toString(),
+						url: officePageURL(office, pageType.PageRelativePath!).toString(),
 						timestamp: modifiedTimestamp,
 						color: 0x135897,
 						image: {
