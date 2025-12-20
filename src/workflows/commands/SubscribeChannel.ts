@@ -15,7 +15,7 @@ export class SubscribeChannelWorkflow extends WorkflowEntrypoint<Env, SubscribeP
 					AND ChannelId = ?2;
 			`);
 
-			const { results } = await statement.bind(office, channel).run<{ id: number }>();
+			const { results } = await statement.bind(office.toUpperCase(), channel).run<{ id: number }>();
 
 			return results.length > 0;
 		});
@@ -32,6 +32,7 @@ export class SubscribeChannelWorkflow extends WorkflowEntrypoint<Env, SubscribeP
 			try {
 				await step.do('Create subscription in database', async () => {
 					const { office, guild, channel } = event.payload;
+					console.log(`Subscribing channel ${channel} (in guild ${guild}) to office ${office}`);
 
 					const statement = this.env.DB.prepare(`
 						INSERT INTO Subscriptions (OfficeId, GuildId, ChannelId)
@@ -41,7 +42,7 @@ export class SubscribeChannelWorkflow extends WorkflowEntrypoint<Env, SubscribeP
 						RETURNING id;
 					`);
 
-					const { results } = await statement.bind(office, guild, channel).run<{ id: number }>();
+					const { results } = await statement.bind(office.toUpperCase(), guild, channel).run<{ id: number }>();
 
 					return results[0].id;
 				});
@@ -56,7 +57,7 @@ export class SubscribeChannelWorkflow extends WorkflowEntrypoint<Env, SubscribeP
 					});
 				});
 
-				throw e;
+				return;
 			}
 
 			await step.do('Acknowledge subscription success', async () => {
