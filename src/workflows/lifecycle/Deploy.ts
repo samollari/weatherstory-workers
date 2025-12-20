@@ -15,22 +15,23 @@ export class DeployWorkflow extends WorkflowEntrypoint<Env, DeployParams> {
 				);
 			}
 			await Promise.all(
-				offices.map((office) => {
-					new Promise((resolve, reject) => {
-						step
-							.waitForEvent(`Wait for ${office} success`, {
-								type: DeployWorkflow.officeEventType(office, 'success'),
-								timeout: '15 minutes',
-							})
-							.then(() => resolve);
-						step
-							.waitForEvent(`Wait for ${office} failure`, {
-								type: DeployWorkflow.officeEventType(office, 'failure'),
-								timeout: '15 minutes',
-							})
-							.then(() => reject);
-					});
-				})
+				offices.map(
+					(office) =>
+						new Promise((resolve, reject) => {
+							step
+								.waitForEvent(`Wait for ${office} success`, {
+									type: DeployWorkflow.officeEventType(office, 'success'),
+									timeout: '15 minutes',
+								})
+								.then(() => resolve);
+							step
+								.waitForEvent(`Wait for ${office} failure`, {
+									type: DeployWorkflow.officeEventType(office, 'failure'),
+									timeout: '15 minutes',
+								})
+								.then(() => reject);
+						})
+				)
 			);
 		});
 
