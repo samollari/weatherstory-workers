@@ -1,0 +1,137 @@
+-- Migration number: 0004 	 2025-08-28T18:40:14.382Z
+
+-- Set up new columns
+ALTER TABLE Offices
+    Add OfficeName TEXT;
+
+ALTER TABLE Offices
+    ADD PageRelativePath TEXT
+    DEFAULT NULL;
+
+ALTER TABLE Offices
+    ADD StoryType TEXT
+    DEFAULT NULL;
+
+-- Populate office names
+UPDATE Offices SET OfficeName = 'Fairbanks, AK' WHERE CallSign = 'AFG';
+UPDATE Offices SET OfficeName = 'Anchorage, AK' WHERE CallSign = 'AFC';
+UPDATE Offices SET OfficeName = 'Juneau, AK' WHERE CallSign = 'AJK';
+UPDATE Offices SET OfficeName = 'Seattle, WA' WHERE CallSign = 'SEW';
+UPDATE Offices SET OfficeName = 'Portland, OR' WHERE CallSign = 'PQR';
+UPDATE Offices SET OfficeName = 'Spokane, WA' WHERE CallSign = 'OTX';
+UPDATE Offices SET OfficeName = 'Pendleton, OR' WHERE CallSign = 'PDT';
+UPDATE Offices SET OfficeName = 'Missoula, MT' WHERE CallSign = 'MSO';
+UPDATE Offices SET OfficeName = 'Boise, ID' WHERE CallSign = 'BOI';
+UPDATE Offices SET OfficeName = 'Great Falls, MT' WHERE CallSign = 'TFX';
+UPDATE Offices SET OfficeName = 'Glasgow, MT' WHERE CallSign = 'GGW';
+UPDATE Offices SET OfficeName = 'Pocatello, ID' WHERE CallSign = 'PIH';
+UPDATE Offices SET OfficeName = 'Sacramento, CA' WHERE CallSign = 'STO';
+UPDATE Offices SET OfficeName = 'Eureka, CA' WHERE CallSign = 'EKA';
+UPDATE Offices SET OfficeName = 'San Francisco/Monterey Bay Area, CA' WHERE CallSign = 'MTR';
+UPDATE Offices SET OfficeName = 'Los Angeles/Oxnard, CA' WHERE CallSign = 'LOX';
+UPDATE Offices SET OfficeName = 'Medford, OR' WHERE CallSign = 'MFR';
+UPDATE Offices SET OfficeName = 'Reno, NV' WHERE CallSign = 'REV';
+UPDATE Offices SET OfficeName = 'Hanford, CA' WHERE CallSign = 'HNX';
+UPDATE Offices SET OfficeName = 'San Diego, CA' WHERE CallSign = 'SGX';
+UPDATE Offices SET OfficeName = 'Elko, NV' WHERE CallSign = 'LKN';
+UPDATE Offices SET OfficeName = 'Las Vegas, NV' WHERE CallSign = 'VEF';
+UPDATE Offices SET OfficeName = 'Phoenix, AZ' WHERE CallSign = 'PSR';
+UPDATE Offices SET OfficeName = 'Salt Lake City, UT' WHERE CallSign = 'SLC';
+UPDATE Offices SET OfficeName = 'Riverton, WY' WHERE CallSign = 'RIW';
+UPDATE Offices SET OfficeName = 'Billings, MT' WHERE CallSign = 'BYZ';
+UPDATE Offices SET OfficeName = 'Flagstaff, AZ' WHERE CallSign = 'FGZ';
+UPDATE Offices SET OfficeName = 'Tucson, AZ' WHERE CallSign = 'TWC';
+UPDATE Offices SET OfficeName = 'El Paso, TX' WHERE CallSign = 'ELP';
+UPDATE Offices SET OfficeName = 'Albuquerque, NM' WHERE CallSign = 'ABQ';
+UPDATE Offices SET OfficeName = 'Amarillo, TX' WHERE CallSign = 'AMA';
+UPDATE Offices SET OfficeName = 'Lubbock, TX' WHERE CallSign = 'LUB';
+UPDATE Offices SET OfficeName = 'Midland/Odessa, TX' WHERE CallSign = 'MAF';
+UPDATE Offices SET OfficeName = 'San Angelo, TX' WHERE CallSign = 'SJT';
+UPDATE Offices SET OfficeName = 'Austin/San Antonio, TX' WHERE CallSign = 'EWX';
+UPDATE Offices SET OfficeName = 'Corpus Christi, TX' WHERE CallSign = 'CRP';
+UPDATE Offices SET OfficeName = 'Brownsville, TX' WHERE CallSign = 'BRO';
+UPDATE Offices SET OfficeName = 'Houston/Galveston, TX' WHERE CallSign = 'HGX';
+UPDATE Offices SET OfficeName = 'Dallas/Fort Worth, TX' WHERE CallSign = 'FWD';
+UPDATE Offices SET OfficeName = 'Norman, OK' WHERE CallSign = 'OUN';
+UPDATE Offices SET OfficeName = 'Shreveport, LA' WHERE CallSign = 'SHV';
+UPDATE Offices SET OfficeName = 'Lake Charles, LA' WHERE CallSign = 'LCH';
+UPDATE Offices SET OfficeName = 'Tulsa, OK' WHERE CallSign = 'TSA';
+UPDATE Offices SET OfficeName = 'Little Rock, AR' WHERE CallSign = 'LZK';
+UPDATE Offices SET OfficeName = 'New Orleans/Baton Rouge, LA' WHERE CallSign = 'LIX';
+UPDATE Offices SET OfficeName = 'Jackson, MS' WHERE CallSign = 'JAN';
+UPDATE Offices SET OfficeName = 'Memphis, TN' WHERE CallSign = 'MEG';
+UPDATE Offices SET OfficeName = 'Mobile, AL/Pensacola, FL' WHERE CallSign = 'MOB';
+UPDATE Offices SET OfficeName = 'Birmingham, AL' WHERE CallSign = 'BMX';
+UPDATE Offices SET OfficeName = 'Huntsville, AL' WHERE CallSign = 'HUN';
+UPDATE Offices SET OfficeName = 'Nashville, TN' WHERE CallSign = 'OHX';
+UPDATE Offices SET OfficeName = 'Guam' WHERE CallSign = 'GUM';
+UPDATE Offices SET OfficeName = 'Honolulu, HI' WHERE CallSign = 'HFO';
+UPDATE Offices SET OfficeName = 'San Juan, PR' WHERE CallSign = 'SJU';
+UPDATE Offices SET OfficeName = 'Key West, FL' WHERE CallSign = 'KEY';
+UPDATE Offices SET OfficeName = 'Miami - South Florida' WHERE CallSign = 'MFL';
+UPDATE Offices SET OfficeName = 'Melbourne, FL' WHERE CallSign = 'MLB';
+UPDATE Offices SET OfficeName = 'Tampa Bay Area, FL' WHERE CallSign = 'TBW';
+UPDATE Offices SET OfficeName = 'Tallahassee, FL' WHERE CallSign = 'TAE';
+UPDATE Offices SET OfficeName = 'Jacksonville, FL' WHERE CallSign = 'JAX';
+UPDATE Offices SET OfficeName = 'Peachtree City, GA' WHERE CallSign = 'FFC';
+UPDATE Offices SET OfficeName = 'Denver/Boulder, CO' WHERE CallSign = 'BOU';
+UPDATE Offices SET OfficeName = 'Grand Junction, CO' WHERE CallSign = 'GJT';
+UPDATE Offices SET OfficeName = 'Pueblo, CO' WHERE CallSign = 'PUB';
+UPDATE Offices SET OfficeName = 'Goodland, KS' WHERE CallSign = 'GLD';
+UPDATE Offices SET OfficeName = 'Dodge City, KS' WHERE CallSign = 'DDC';
+UPDATE Offices SET OfficeName = 'Rapid City, SD' WHERE CallSign = 'UNR';
+UPDATE Offices SET OfficeName = 'Aberdeen, SD' WHERE CallSign = 'ABR';
+UPDATE Offices SET OfficeName = 'Bismarck, ND' WHERE CallSign = 'BIS';
+UPDATE Offices SET OfficeName = 'Grand Forks, ND' WHERE CallSign = 'FGF';
+UPDATE Offices SET OfficeName = 'Cheyenne, WY' WHERE CallSign = 'CYS';
+UPDATE Offices SET OfficeName = 'North Platte, NE' WHERE CallSign = 'LBF';
+UPDATE Offices SET OfficeName = 'Hastings, NE' WHERE CallSign = 'GID';
+UPDATE Offices SET OfficeName = 'Wichita, KS' WHERE CallSign = 'ICT';
+UPDATE Offices SET OfficeName = 'Topeka, KS' WHERE CallSign = 'TOP';
+UPDATE Offices SET OfficeName = 'Omaha/Valley, NE' WHERE CallSign = 'OAX';
+UPDATE Offices SET OfficeName = 'Sioux Falls, SD' WHERE CallSign = 'FSD';
+UPDATE Offices SET OfficeName = 'Twin Cities/Chanhassen, MN' WHERE CallSign = 'MPX';
+UPDATE Offices SET OfficeName = 'Kansas City/Pleasant Hill, MO' WHERE CallSign = 'EAX';
+UPDATE Offices SET OfficeName = 'Springfield, MO' WHERE CallSign = 'SGF';
+UPDATE Offices SET OfficeName = 'La Crosse, WI' WHERE CallSign = 'ARX';
+UPDATE Offices SET OfficeName = 'Des Moines, IA' WHERE CallSign = 'DMX';
+UPDATE Offices SET OfficeName = 'Marquette, MI' WHERE CallSign = 'MQT';
+UPDATE Offices SET OfficeName = 'Duluth, MN' WHERE CallSign = 'DLH';
+UPDATE Offices SET OfficeName = 'Green Bay, WI' WHERE CallSign = 'GRB';
+UPDATE Offices SET OfficeName = 'Quad Cities, IA/IL' WHERE CallSign = 'DVN';
+UPDATE Offices SET OfficeName = 'Paducah, KY' WHERE CallSign = 'PAH';
+UPDATE Offices SET OfficeName = 'St. Louis, MO' WHERE CallSign = 'LSX';
+UPDATE Offices SET OfficeName = 'Lincoln, IL' WHERE CallSign = 'ILX';
+UPDATE Offices SET OfficeName = 'Chicago, IL' WHERE CallSign = 'LOT';
+UPDATE Offices SET OfficeName = 'Milwaukee/Sullivan, WI' WHERE CallSign = 'MKX';
+UPDATE Offices SET OfficeName = 'Gaylord, MI' WHERE CallSign = 'APX';
+UPDATE Offices SET OfficeName = 'Grand Rapids, MI' WHERE CallSign = 'GRR';
+UPDATE Offices SET OfficeName = 'Northern Indiana' WHERE CallSign = 'IWX';
+UPDATE Offices SET OfficeName = 'Indianapolis, IN' WHERE CallSign = 'IND';
+UPDATE Offices SET OfficeName = 'Louisville, KY' WHERE CallSign = 'LMK';
+UPDATE Offices SET OfficeName = 'Detroit/Pontiac, MI' WHERE CallSign = 'DTX';
+UPDATE Offices SET OfficeName = 'Wilmington, OH' WHERE CallSign = 'ILN';
+UPDATE Offices SET OfficeName = 'Charleston, WV' WHERE CallSign = 'RLX';
+UPDATE Offices SET OfficeName = 'Pittsburgh, PA' WHERE CallSign = 'PBZ';
+UPDATE Offices SET OfficeName = 'Jackson, KY' WHERE CallSign = 'JKL';
+UPDATE Offices SET OfficeName = 'Charleston, SC' WHERE CallSign = 'CHS';
+UPDATE Offices SET OfficeName = 'Columbia, SC' WHERE CallSign = 'CAE';
+UPDATE Offices SET OfficeName = 'Greenville-Spartanburg, SC' WHERE CallSign = 'GSP';
+UPDATE Offices SET OfficeName = 'Morristown, TN' WHERE CallSign = 'MRX';
+UPDATE Offices SET OfficeName = 'Blacksburg, VA' WHERE CallSign = 'RNK';
+UPDATE Offices SET OfficeName = 'Wilmington, NC' WHERE CallSign = 'ILM';
+UPDATE Offices SET OfficeName = 'Raleigh/Durham, NC' WHERE CallSign = 'RAH';
+UPDATE Offices SET OfficeName = 'Newport/Morehead, NC' WHERE CallSign = 'MHX';
+UPDATE Offices SET OfficeName = 'Wakefield, VA' WHERE CallSign = 'AKQ';
+UPDATE Offices SET OfficeName = 'Baltimore, MD/Washington D. C.' WHERE CallSign = 'LWX';
+UPDATE Offices SET OfficeName = 'Cleveland, OH' WHERE CallSign = 'CLE';
+UPDATE Offices SET OfficeName = 'Buffalo, NY' WHERE CallSign = 'BUF';
+UPDATE Offices SET OfficeName = 'State College, PA' WHERE CallSign = 'CTP';
+UPDATE Offices SET OfficeName = 'New York, NY' WHERE CallSign = 'OKX';
+UPDATE Offices SET OfficeName = 'Philadelphia/Mt Holly, PA' WHERE CallSign = 'PHI';
+UPDATE Offices SET OfficeName = 'Binghamton, NY' WHERE CallSign = 'BGM';
+UPDATE Offices SET OfficeName = 'Albany, NY' WHERE CallSign = 'ALY';
+UPDATE Offices SET OfficeName = 'Burlington, VT' WHERE CallSign = 'BTV';
+UPDATE Offices SET OfficeName = 'Boston / Taunton, MA' WHERE CallSign = 'BOX';
+UPDATE Offices SET OfficeName = 'Gray/Portland, ME' WHERE CallSign = 'GYX';
+UPDATE Offices SET OfficeName = 'Caribou, ME' WHERE CallSign = 'CAR';

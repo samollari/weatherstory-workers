@@ -1,7 +1,7 @@
 -- Migration number: 0001 	 2025-07-06T03:36:46.715Z
 
-DROP TABLE Subscriptions;
-DROP TABLE Offices;
+DROP TABLE IF EXISTS Subscriptions;
+DROP TABLE IF EXISTS Offices;
 
 -- Create tables
 CREATE TABLE IF NOT EXISTS Offices (

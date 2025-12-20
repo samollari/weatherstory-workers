@@ -1,92 +1,72 @@
 import {
-	APIApplicationCommand,
-	APIApplicationCommandInteractionDataOption,
-	APIChatInputApplicationCommandInteraction,
+	APIApplicationCommandOption,
 	APIInteractionResponseDeferredChannelMessageWithSource,
 	ApplicationCommandOptionType,
 	ApplicationCommandType,
 	InteractionResponseType,
-	InteractionType,
 	RESTGetAPIApplicationCommandsResult,
 	RESTPutAPIApplicationCommandsJSONBody,
 	RESTPutAPIApplicationGuildCommandsJSONBody,
 	Routes,
 	Snowflake,
 } from 'discord-api-types/v10';
-import type { Env } from '.';
-import { REST } from '@discordjs/rest';
+import type { Env } from './env';
+import { DiscordAPIError } from '@discordjs/rest';
+import { CommandDefinitions, getCommandOptionValue, RESTAPI } from './util/interaction-helpers';
+import { CapsOffice } from './util/offices';
 
-export class RESTAPI {
-	private static state: { token: string; rest: REST } | undefined = undefined;
-	public static getInstance(token: string) {
-		if (!this.state) {
-			this.state = {
-				token: token,
-				rest: new REST().setToken(token),
-			};
-		}
+async function autocompleteOffices(env: Env, value: string, channelId?: Snowflake) {
+	// console.log(`Autocomplete "${value}"`);
+	const statement = env.DB.prepare(`
+		SELECT 
+			CallSign,
+			OfficeName, 
+			MIN(Priority) AS TopPriority
+		FROM (
+			-- Priority 1: Call sign starts with search term
+			SELECT OfficeId, CallSign, OfficeName, 1 AS Priority
+			FROM Offices
+			WHERE
+				CallSign LIKE ?1
+				AND Supported = 1
+			
+			UNION ALL
 
-		if (token === this.state.token) {
-			return this.state.rest;
-		} else {
-			throw new Error('Token does not match memoized value!');
-		}
-	}
-}
+			-- Priority 2: Office name starts with search term
+			SELECT OfficeId, CallSign, OfficeName, 2 as Priority
+			FROM Offices
+			WHERE
+				OfficeName LIKE ?1
+				AND Supported = 1
 
-const supportedSelfServiceOffices = [
-	// TODO: Dynamically generate these choices from the database of supported offices when invoked
-	{
-		name: 'BOX - Boston/Norton, MA',
-		value: 'BOX',
-	},
-];
+			UNION ALL
+			
+			-- Priority 3: search term is in call sign OR in the OfficeName
+			SELECT OfficeId, CallSign, OfficeName, 3 AS Priority
+			FROM Offices
+			WHERE
+				CallSign LIKE ?2
+				OR OfficeName LIKE ?2
+				AND Supported = 1
+		)
+		WHERE NOT ?3 OR OfficeId IN (
+			SELECT OfficeId
+			FROM Subscriptions
+			WHERE ChannelId = ?4
+		)
+		GROUP BY CallSign
+		ORDER BY TopPriority ASC
+		LIMIT 25;
+	`);
 
-type CommandName = keyof typeof commands.global;
+	const { results } = await statement
+		.bind(`${value}%`, `%${value}%`, !!channelId, channelId ?? '')
+		.run<{ CallSign: CapsOffice; OfficeName: string; TopPriority: number }>();
 
-type CommandOptions<CName extends CommandName> = (typeof commands.global)[CName]['options'];
-
-/*
- * I'm sorry for this atrocity of generics, but they're all doing important things.
- * CName gets all known command names from the definition below for IntelliSense. Once the dev selects a command as a parameter, CName becomes that command's name.
- * OptionName then collects all known option names for that command for IntelliSense. Again, becomes the selected option name once dev selects.
- * OptionIndex is a helper.
- * Option then picks the correct option definition based on the command and option names defined by the dev.
- * ExpectedReturnType then picks the correct option subtype based on the defined option type.
- * The return type types the implementation behavior, where non-required options may not be included and may return undefined, while required options will always return a value (or throw an exception and not return)
- */
-// TODO: Possible to get commandName automatically somehow? Like defining commands with classes and having this be on a parent class, with command name being a generic?
-function getCommandOptionValue<
-	CName extends CommandName,
-	OptionName extends CommandOptions<CName>[number]['name'],
-	OptionIndex extends number,
-	Option extends CommandOptions<CName>[OptionIndex]['name'] extends OptionName ? CommandOptions<CName>[OptionIndex] : never,
-	ExpectedReturnType extends APIApplicationCommandInteractionDataOption<InteractionType.ApplicationCommand> & { type: Option['type'] }
->(
-	message: APIChatInputApplicationCommandInteraction,
-	commandName: CName,
-	optionName: OptionName
-): Option extends { required: boolean }
-	? Option['required'] extends true
-		? ExpectedReturnType
-		: ExpectedReturnType | undefined
-	: ExpectedReturnType | undefined {
-	const { data } = message;
-	if (data.name !== commandName) {
-		throw new Error(`Message does not match expected command (got "${data.name}", expected "${commandName}")`);
-	}
-
-	const thisOption = commands.global[commandName].options.find((option) => option.name === optionName)!;
-	const optionRequired = 'required' in thisOption ? thisOption.required : false;
-
-	const foundOptionValue = data.options?.find((option) => option.name === optionName);
-
-	if (foundOptionValue === undefined && optionRequired) {
-		throw new Error(`Message does not contain required option "${optionName}"`);
-	}
-
-	// @ts-expect-error doing some type nonsense above. I don't feel like making this the correct type but I know it is
-	return foundOptionValue;
+	return results.map((result) => ({
+		name: `${result.CallSign} - ${result.OfficeName}`,
+		value: `${result.CallSign.toLowerCase()}`,
+	}));
 }
 
 export const commands = {
@@ -99,7 +79,7 @@ export const commands = {
 					required: true,
 					name: 'office',
 					description: 'Office to get updates from',
-					choices: supportedSelfServiceOffices,
+					autocomplete: (env: Env, value: string) => autocompleteOffices(env, value),
 					min_length: 3,
 					max_length: 3,
 				},
@@ -130,7 +110,7 @@ export const commands = {
 					type: ApplicationCommandOptionType.String,
 					name: 'office',
 					description: 'Office to unsubscribe from',
-					choices: supportedSelfServiceOffices, // TODO: Autocomplete based on current subscriptions
+					autocomplete: (env, value, interaction) => autocompleteOffices(env, value, interaction.channel?.id),
 					min_length: 3,
 					max_length: 3,
 				},
@@ -155,15 +135,10 @@ export const commands = {
 		},
 		// 'getstory': {}
 	},
-} as const satisfies {
-	global: {
-		[key: string]: Pick<APIApplicationCommand, 'description' | 'options'> & {
-			run(env: Env, message: APIChatInputApplicationCommandInteraction): Promise<Response> | Response;
-		};
-	};
-};
+} as const satisfies CommandDefinitions;
 
-export async function deploy({ DISCORD_APP_ID, DISCORD_BOT_TOKEN }: Pick<Env, 'DISCORD_APP_ID' | 'DISCORD_BOT_TOKEN'>, guild?: Snowflake) {
+export async function deploy(env: Env, guild?: Snowflake) {
+	const { DISCORD_APP_ID, DISCORD_BOT_TOKEN } = env;
 	const route = guild ? Routes.applicationGuildCommands(DISCORD_APP_ID, guild) : Routes.applicationCommands(DISCORD_APP_ID);
 
 	const rest = RESTAPI.getInstance(DISCORD_BOT_TOKEN);
@@ -174,22 +149,43 @@ export async function deploy({ DISCORD_APP_ID, DISCORD_BOT_TOKEN }: Pick<Env, 'D
 
 	const currentCommandNames = Object.keys(commands.global) as (keyof typeof commands.global)[];
 
-	const builtCommandList = currentCommandNames.map((name) => {
-		const { description, options } = commands.global[name];
-		const definition = {
-			id: existingCommandIdMap[name],
-			type: ApplicationCommandType.ChatInput as const,
-			name,
-			description,
-			options,
-		};
-		return definition;
-	}) satisfies RESTPutAPIApplicationCommandsJSONBody & RESTPutAPIApplicationGuildCommandsJSONBody;
+	const builtCommandList = (await Promise.all(
+		currentCommandNames.map(async (name) => {
+			const { description, options } = (commands as CommandDefinitions).global[name];
+			const definition = {
+				id: existingCommandIdMap[name],
+				type: ApplicationCommandType.ChatInput as const,
+				name,
+				description,
+				options: (await Promise.all(
+					options.map(async (option) => {
+						if ('choices' in option && typeof option.choices === 'function') {
+							let { choices, ...restParams } = option;
+							return { ...restParams, choices: await choices(env) } as APIApplicationCommandOption;
+						}
+						if ('autocomplete' in option) {
+							let { autocomplete, ...restParams } = option;
+							return { ...restParams, autocomplete: true } as APIApplicationCommandOption;
+						}
+						throw new Error('uh oh! transforming options');
+					})
+				)) as APIApplicationCommandOption[], // FIXME: I would love this to be a "satisfies" or not exist at all. Unfortunately, my type hacking is hacky
+			};
+			return definition;
+		})
+	)) satisfies RESTPutAPIApplicationCommandsJSONBody & RESTPutAPIApplicationGuildCommandsJSONBody;
 
 	console.log('Built command list:', builtCommandList);
 
-	const responseCommands = (await rest.put(route, {
-		body: builtCommandList,
-	})) as RESTPutAPIApplicationGuildCommandsJSONBody;
-	console.log({ responseCommands });
+	try {
+		const responseCommands = (await rest.put(route, {
+			body: builtCommandList,
+		})) as RESTPutAPIApplicationGuildCommandsJSONBody;
+		console.log({ responseCommands });
+	} catch (e) {
+		if (e instanceof DiscordAPIError) {
+			console.log(JSON.stringify(e.rawError));
+		}
+		throw e;
+	}
 }
