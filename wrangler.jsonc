@@ -41,6 +41,11 @@
 			"name": "wxstory-deploy",
 			"binding": "DEPLOY_WORKFLOW",
 			"class_name": "DeployWorkflow"
+		},
+		{
+			"name": "wxstory-update-office-method",
+			"binding": "UPDATE_OFFICE_METHOD_WORKFLOW",
+			"class_name": "UpdateOfficeMethodWorkflow"
 		}
 	],
 	/**

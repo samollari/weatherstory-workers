@@ -4,6 +4,7 @@ import { SubscribeParams } from './workflows/commands/SubscribeChannel';
 import { SendMessageParams } from './workflows/update-process/SendMessage';
 import { OfficeParams } from './workflows/update-process/DoOfficeUpdate';
 import { StartParams } from './workflows/update-process/StartUpdate';
+import { UpdateOfficeMethodParams } from './workflows';
 
 export type Env = {
 	START_WX_STORY_UPDATE_WORKFLOW: Workflow<StartParams>;
@@ -12,6 +13,7 @@ export type Env = {
 	SUBSCRIBE_WORKFLOW: Workflow<SubscribeParams>;
 	UNSUBSCRIBE_WORKFLOW: Workflow<UnsubscribeParams>;
 	DEPLOY_WORKFLOW: Workflow<DeployParams>;
+	UPDATE_OFFICE_METHOD_WORKFLOW: Workflow<UpdateOfficeMethodParams>;
 
 	wxstory_kv: KVNamespace;
 	wxstory_images: R2Bucket;
