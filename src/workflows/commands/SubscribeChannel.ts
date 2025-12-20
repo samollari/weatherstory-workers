@@ -1,7 +1,7 @@
 import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 import { Routes, RESTPatchAPIWebhookWithTokenMessageJSONBody } from 'discord-api-types/v10';
 import { Env } from '../../env';
-import { RESTAPI } from '../../interaction';
+import { RESTAPI } from '../../util/interaction-helpers';
 
 export class SubscribeChannelWorkflow extends WorkflowEntrypoint<Env, SubscribeParams> {
 	async run(event: Readonly<WorkflowEvent<SubscribeParams>>, step: WorkflowStep) {

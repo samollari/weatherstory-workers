@@ -2,7 +2,7 @@ import { WorkflowEntrypoint, WorkflowEvent, WorkflowStep } from 'cloudflare:work
 import { RESTPostAPIChannelMessageJSONBody, Routes } from 'discord-api-types/v10';
 import { Env } from '../../env';
 import { officeMessageKey } from '../../util/offices';
-import { RESTAPI } from '../../interaction';
+import { RESTAPI } from '../../util/interaction-helpers';
 
 export class SendMessageWorkflow extends WorkflowEntrypoint<Env, SendMessageParams> {
 	async run(event: Readonly<WorkflowEvent<SendMessageParams>>, step: WorkflowStep) {

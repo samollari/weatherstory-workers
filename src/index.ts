@@ -1,14 +1,22 @@
 import { Router } from '@tsndr/cloudflare-worker-router';
 import { verifyKey } from 'discord-interactions';
 import {
+	APIApplicationCommandAutocompleteInteraction,
+	APIApplicationCommandAutocompleteResponse,
+	APIApplicationCommandInteraction,
+	APIApplicationCommandInteractionDataIntegerOption,
+	APIApplicationCommandInteractionDataNumberOption,
+	APIApplicationCommandInteractionDataStringOption,
 	APIChatInputApplicationCommandInteraction,
 	APIInteraction,
+	ApplicationCommandOptionType,
 	ApplicationCommandType,
 	InteractionResponseType,
 	InteractionType,
 } from 'discord-api-types/payloads';
 import { commands } from './interaction';
 import { Env } from './env';
+import { getCommandOptionValue } from './util/interaction-helpers';
 
 export * from './workflows';
 
@@ -54,6 +62,19 @@ router.any('/deploy', async ({ req, env }) => {
 	return new Response('ok');
 });
 
+function getCommandFromInteraction<I extends APIApplicationCommandInteraction | APIApplicationCommandAutocompleteInteraction>(
+	interaction: I
+) {
+	const receivedCommandName = interaction.data.name;
+
+	if (!(receivedCommandName in commands.global)) {
+		return undefined;
+	}
+
+	const name = receivedCommandName as keyof typeof commands.global;
+	return { name, ...commands.global[name] };
+}
+
 router.post('/interaction', async ({ req, env }) => {
 	const signature = req.headers.get('X-Signature-Ed25519');
 	const timestamp = req.headers.get('X-Signature-Timestamp');
@@ -80,15 +101,47 @@ router.post('/interaction', async ({ req, env }) => {
 			return Response.json({ error: 'Unsupported command type' }, { status: 400 });
 		}
 
-		const receivedCommandName = message.data.name;
-
-		if (!(receivedCommandName in commands.global)) {
+		const command = getCommandFromInteraction(message);
+		if (!command) {
 			return Response.json({ error: 'Unknown command' }, { status: 400 });
 		}
 
-		const command = commands.global[receivedCommandName as keyof typeof commands.global];
-
 		return await command.run(env, message as APIChatInputApplicationCommandInteraction);
+	}
+
+	if (message.type === InteractionType.ApplicationCommandAutocomplete) {
+		const command = getCommandFromInteraction(message);
+		if (!command) {
+			return Response.json({ error: 'Unknown command' }, { status: 400 });
+		}
+
+		const focusedOptions = message.data.options.filter(
+			(
+				option
+			): option is
+				| APIApplicationCommandInteractionDataStringOption
+				| APIApplicationCommandInteractionDataIntegerOption<InteractionType.ApplicationCommandAutocomplete>
+				| APIApplicationCommandInteractionDataNumberOption<InteractionType.ApplicationCommandAutocomplete> =>
+				'focused' in option && option.focused === true
+		);
+		if (focusedOptions.length != 1) {
+			return Response.json({ error: 'Not one focused option' }, { status: 400 });
+		}
+
+		const focusedOption = focusedOptions[0];
+		const optionDefinition = command.options.find(({ name }) => name == focusedOption.name);
+		if (!optionDefinition) {
+			return Response.json({ error: 'Focused option not found in definition' }, { status: 500 });
+		}
+
+		const choices = await optionDefinition.autocomplete(env, focusedOption.value);
+
+		return Response.json({
+			type: InteractionResponseType.ApplicationCommandAutocompleteResult,
+			data: {
+				choices,
+			},
+		} satisfies APIApplicationCommandAutocompleteResponse);
 	}
 
 	console.error('Unknown interaction type');
