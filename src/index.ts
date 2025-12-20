@@ -9,14 +9,12 @@ import {
 	APIApplicationCommandInteractionDataStringOption,
 	APIChatInputApplicationCommandInteraction,
 	APIInteraction,
-	ApplicationCommandOptionType,
 	ApplicationCommandType,
 	InteractionResponseType,
 	InteractionType,
 } from 'discord-api-types/payloads';
 import { commands } from './interaction';
 import { Env } from './env';
-import { getCommandOptionValue } from './util/interaction-helpers';
 
 export * from './workflows';
 
@@ -24,7 +22,7 @@ const router = new Router<Env>();
 
 router.get('/status', async ({ req, env }) => {
 	const id = req.query['instanceId'];
-	let instance = await env.START_WX_STORY_UPDATE_WORKFLOW.get(id);
+	const instance = await env.START_WX_STORY_UPDATE_WORKFLOW.get(id);
 	return Response.json({
 		status: await instance.status(),
 	});
@@ -34,7 +32,7 @@ router.any('/invoke', async ({ req, env }) => {
 	const dev = 'dev' in req.query;
 
 	// Spawn a new instance and return the ID and status
-	let instance = await env.START_WX_STORY_UPDATE_WORKFLOW.create({ params: { dev } });
+	const instance = await env.START_WX_STORY_UPDATE_WORKFLOW.create({ params: { dev } });
 	// You can also set the ID to match an ID in your own system
 	// and pass an optional payload to the Workflow
 	// let instance = await env.MY_WORKFLOW.create({
@@ -87,7 +85,7 @@ router.post('/interaction', async ({ req, env }) => {
 		return new Response('Bad request signature', { status: 401 });
 	}
 
-	const message = (await req.raw.json()) as APIInteraction;
+	const message: APIInteraction = await req.raw.json();
 	// console.log({ message });
 
 	if (message.type === InteractionType.Ping) {
@@ -153,7 +151,7 @@ export default {
 		return router.handle(req, env);
 	},
 
-	async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+	async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext) {
 		await env.START_WX_STORY_UPDATE_WORKFLOW.create({ params: { dev: false } });
 	},
 };

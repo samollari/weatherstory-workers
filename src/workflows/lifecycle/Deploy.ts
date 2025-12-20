@@ -6,7 +6,7 @@ import { chunk, limit } from '../../util/array';
 
 export class DeployWorkflow extends WorkflowEntrypoint<Env, DeployParams> {
 	async run(event: Readonly<WorkflowEvent<DeployParams>>, step: WorkflowStep): Promise<void> {
-		const offices = await step.do('Collect offices for this run', async () => limit(NWS_OFFICES, event.payload.limit));
+		const offices = await step.do('Collect offices for this run', () => Promise.resolve(limit(NWS_OFFICES, event.payload.limit)));
 
 		await step.do('Run office method updates in batches and wait for them all to succeed', async () => {
 			for (const officesChunk of chunk(offices, 100)) {
@@ -18,13 +18,13 @@ export class DeployWorkflow extends WorkflowEntrypoint<Env, DeployParams> {
 				offices.map(
 					(office) =>
 						new Promise((resolve, reject) => {
-							step
+							void step
 								.waitForEvent(`Wait for ${office} success`, {
 									type: DeployWorkflow.officeEventType(office, 'success'),
 									timeout: '15 minutes',
 								})
 								.then(() => resolve);
-							step
+							void step
 								.waitForEvent(`Wait for ${office} failure`, {
 									type: DeployWorkflow.officeEventType(office, 'failure'),
 									timeout: '15 minutes',

@@ -5,7 +5,6 @@ import {
 	APIApplicationCommandInteractionDataOption,
 	APIApplicationCommandOption,
 	APIApplicationCommandOptionChoice,
-	APIAutocompleteApplicationCommandInteractionData,
 	APIChatInputApplicationCommandInteraction,
 	ApplicationCommandOptionType,
 	InteractionType,
@@ -107,7 +106,7 @@ type CallableChoices<
 			choices: (env: Env) => Promise<O> | O;
 			autocomplete?: false;
 	  }
-	: {};
+	: Record<never, never>;
 
 type OptionWithCallableChoices<
 	T extends ApplicationCommandOptionType,
@@ -124,7 +123,7 @@ type AutocompletableChoices<
 			autocomplete: (env: Env, value: V, interaction: APIApplicationCommandAutocompleteInteraction) => Promise<O> | O;
 			choices?: [];
 	  }
-	: {};
+	: Record<never, never>;
 type OptionWithAutocompletableChoices<
 	T extends ApplicationCommandOptionType,
 	O = Omit<Extract<APIApplicationCommandOption, { type: T }>, 'choices' | 'autocomplete'>

@@ -34,7 +34,7 @@ export async function htmlQuery<Queries extends Record<string, HTMLQuery>>(html:
 			});
 		} else {
 			rewriter = rewriter.on(query.query, {
-				element(element) {
+				element() {
 					thisQueryResponses.push('');
 				},
 				text(element) {

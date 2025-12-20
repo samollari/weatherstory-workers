@@ -146,10 +146,10 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 		});
 		console.log({ cachedAddress });
 
-		const officeMessageData = await step.do('Assemble message data', async () => {
+		const officeMessageData = await step.do('Assemble message data', () => {
 			const { office } = event.payload;
 
-			return {
+			return Promise.resolve({
 				embeds: [
 					{
 						author: {
@@ -166,7 +166,7 @@ export class WXStoryPerOfficeWorkflow extends WorkflowEntrypoint<Env, OfficePara
 						},
 					},
 				],
-			} satisfies RESTPostAPIChannelMessageJSONBody;
+			} satisfies RESTPostAPIChannelMessageJSONBody);
 		});
 		console.log({ officeMessageData });
 

@@ -89,7 +89,7 @@ export const commands = {
 				const channel = message.channel.id;
 				const { value: office } = getCommandOptionValue(message, 'subscribe', 'office');
 
-				const workflowInstance = await env.SUBSCRIBE_WORKFLOW.create({
+				await env.SUBSCRIBE_WORKFLOW.create({
 					params: {
 						office,
 						guild,
@@ -120,7 +120,7 @@ export const commands = {
 				const channel = message.channel.id;
 				const office = getCommandOptionValue(message, 'unsubscribe', 'office')?.value;
 
-				const workflowInstance = await env.UNSUBSCRIBE_WORKFLOW.create({
+				await env.UNSUBSCRIBE_WORKFLOW.create({
 					params: {
 						office,
 						channel,
@@ -157,19 +157,19 @@ export async function deploy(env: Env, guild?: Snowflake) {
 				type: ApplicationCommandType.ChatInput as const,
 				name,
 				description,
-				options: (await Promise.all(
+				options: await Promise.all(
 					options.map(async (option) => {
 						if ('choices' in option && typeof option.choices === 'function') {
-							let { choices, ...restParams } = option;
+							const { choices, ...restParams } = option;
 							return { ...restParams, choices: await choices(env) } as APIApplicationCommandOption;
 						}
 						if ('autocomplete' in option) {
-							let { autocomplete, ...restParams } = option;
+							const { autocomplete, ...restParams } = option;
 							return { ...restParams, autocomplete: true } as APIApplicationCommandOption;
 						}
 						throw new Error('uh oh! transforming options');
 					})
-				)) as APIApplicationCommandOption[], // FIXME: I would love this to be a "satisfies" or not exist at all. Unfortunately, my type hacking is hacky
+				), // FIXME: I would love this to be a "satisfies" or not exist at all. Unfortunately, my type hacking is hacky
 			};
 			return definition;
 		})

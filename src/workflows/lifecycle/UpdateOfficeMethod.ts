@@ -101,7 +101,7 @@ export class UpdateOfficeMethodWorkflow extends WorkflowEntrypoint<Env, UpdateOf
 				}
 				throw new NonRetryableError(e.message, e.name);
 			}
-			throw new NonRetryableError(`Error in update office method workflow: ${e}`);
+			throw new NonRetryableError(`Error in update office method workflow: ${JSON.stringify(e)}`);
 		}
 	}
 }

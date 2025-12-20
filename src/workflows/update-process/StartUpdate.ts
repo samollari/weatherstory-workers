@@ -25,7 +25,7 @@ export class StartWXStoryUpdateWorkflow extends WorkflowEntrypoint<Env, StartPar
 		}
 
 		await step.do('Start per-office workflows', async () => {
-			let instances = await this.env.WX_STORY_PER_OFFICE_WORKFLOW.createBatch(
+			await this.env.WX_STORY_PER_OFFICE_WORKFLOW.createBatch(
 				offices.map((office) => ({
 					params: {
 						...event.payload,
