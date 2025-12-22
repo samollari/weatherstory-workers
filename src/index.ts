@@ -20,7 +20,7 @@ export * from './workflows';
 
 const router = new Router<Env>();
 
-router.get('/status', async ({ req, env }) => {
+router.get('/private/status', async ({ req, env }) => {
 	const id = req.query['instanceId'];
 	const instance = await env.START_WX_STORY_UPDATE_WORKFLOW.get(id);
 	return Response.json({
@@ -28,7 +28,7 @@ router.get('/status', async ({ req, env }) => {
 	});
 });
 
-router.any('/invoke', async ({ req, env }) => {
+router.any('/private/invoke', async ({ req, env }) => {
 	const dev = 'dev' in req.query;
 
 	// Spawn a new instance and return the ID and status
@@ -46,7 +46,7 @@ router.any('/invoke', async ({ req, env }) => {
 	});
 });
 
-router.any('/deploy', async ({ req, env }) => {
+router.any('/private/deploy', async ({ req, env }) => {
 	const limit = 'limit' in req.query ? parseInt(req.query.limit) : undefined;
 	const guild = req.query['guild'];
 
