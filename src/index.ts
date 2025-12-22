@@ -146,6 +146,8 @@ router.post('/interaction', async ({ req, env }) => {
 	return Response.json({ error: 'Unknown interaction type' }, { status: 400 });
 });
 
+router.get('/invite', ({ env }) => Response.redirect(`https://discord.com/oauth2/authorize?client_id=${env.DISCORD_APP_ID}`));
+
 export default {
 	async fetch(req: Request, env: Env): Promise<Response> {
 		return router.handle(req, env);
